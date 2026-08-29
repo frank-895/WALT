@@ -1,0 +1,2 @@
+- Do not wrap the lines of md files. Use one line per paragraph.
+- Do not use __future__ annotations.

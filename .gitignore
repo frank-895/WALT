@@ -209,6 +209,20 @@ tempCodeRunnerFile.py
 # PyPI configuration file
 .pypirc
 
+# Node / React / Vite
+node_modules/
+*.tsbuildinfo
+frontend/dist/
+frontend/coverage/
+frontend/.vite/
+*.local
+.env.local
+.env.*.local
+
+# Lefthook local overrides
+lefthook-local.yml
+lefthook-local.yaml
+
 # Marimo
 marimo/_static/
 marimo/_lsp/

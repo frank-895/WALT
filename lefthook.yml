@@ -1,0 +1,94 @@
+glob_matcher: doublestar
+
+pre-commit:
+  piped: true
+  jobs:
+    - name: format
+      group:
+        parallel: true
+        jobs:
+          - name: backend
+            root: backend/
+            glob: "backend/**/*.py"
+            run: uv run ruff check --fix {staged_files} && uv run ruff format {staged_files}
+            stage_fixed: true
+          - name: frontend
+            root: frontend/
+            glob: "frontend/**/*.{css,js,jsx,json,ts,tsx}"
+            run: pnpm exec biome check --write {staged_files}
+            stage_fixed: true
+    - name: check
+      group:
+        parallel: true
+        jobs:
+          - name: backend types
+            root: backend/
+            glob:
+              - "backend/**/*.py"
+              - backend/pyproject.toml
+              - backend/uv.lock
+            run: uv run ty check src tests
+          - name: backend tests
+            root: backend/
+            glob:
+              - "backend/**/*.py"
+              - backend/pyproject.toml
+              - backend/uv.lock
+            run: uv run pytest -q --disable-warnings --maxfail=1
+          - name: backend lockfile
+            root: backend/
+            glob:
+              - backend/pyproject.toml
+              - backend/uv.lock
+            run: uv lock --check
+          - name: frontend types
+            root: frontend/
+            glob:
+              - "frontend/**/*.{js,jsx,ts,tsx}"
+              - frontend/package.json
+              - frontend/pnpm-lock.yaml
+              - frontend/pnpm-workspace.yaml
+              - "frontend/tsconfig*.json"
+            run: pnpm typecheck
+          - name: frontend related tests
+            root: frontend/
+            glob: "frontend/src/**/*.{js,jsx,ts,tsx}"
+            run: pnpm exec vitest related --run {staged_files} --passWithNoTests --reporter=dot
+          - name: frontend full tests
+            root: frontend/
+            glob:
+              - frontend/package.json
+              - frontend/pnpm-lock.yaml
+              - frontend/pnpm-workspace.yaml
+              - frontend/vite.config.ts
+            run: pnpm exec vitest run --reporter=dot
+          - name: frontend build
+            root: frontend/
+            glob:
+              - "frontend/src/**"
+              - frontend/index.html
+              - frontend/package.json
+              - frontend/pnpm-lock.yaml
+              - frontend/pnpm-workspace.yaml
+              - "frontend/tsconfig*.json"
+              - frontend/vite.config.ts
+            run: pnpm exec vite build --clearScreen false
+          - name: frontend lockfile
+            root: frontend/
+            glob:
+              - frontend/package.json
+              - frontend/pnpm-lock.yaml
+              - frontend/pnpm-workspace.yaml
+            run: pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
+          - name: compose configuration
+            glob: "{docker-compose.yml,backend/Dockerfile,frontend/Dockerfile}"
+            run: docker compose -f docker-compose.yml config --quiet
+          - name: backend production image
+            glob: "backend/{Dockerfile,pyproject.toml,uv.lock}"
+            run: docker build --target production --quiet backend
+          - name: frontend production image
+            glob: "frontend/{Dockerfile,package.json,pnpm-lock.yaml,pnpm-workspace.yaml}"
+            run: docker build --target production --quiet frontend
+          - name: lefthook configuration
+            glob: lefthook.yml
+            run: pnpm --dir frontend exec lefthook validate
