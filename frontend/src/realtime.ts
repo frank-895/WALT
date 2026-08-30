@@ -7,6 +7,17 @@ export type DemoStatus =
 
 export type VoiceActivity = "idle" | "listening" | "speaking";
 
+export type AssistantCaptionEvent =
+	| {
+			type: "started" | "updated";
+			responseId?: string;
+			transcript: string;
+	  }
+	| {
+			type: "stopped" | "cleared";
+			responseId?: string;
+	  };
+
 export type DemoSession = {
 	id: string;
 	status: DemoStatus;
@@ -39,7 +50,7 @@ type VoiceAnswer = {
 type DemoCallbacks = {
 	onSession: (session: DemoSession) => void;
 	onAssistantTranscript: (text: string) => void;
-	onAssistantCaption: (text: string) => void;
+	onAssistantCaptionEvent: (event: AssistantCaptionEvent) => void;
 	onUserTranscript: (text: string) => void;
 	onVoiceActivity: (activity: VoiceActivity) => void;
 	onMeetingCard: () => void;
@@ -51,10 +62,6 @@ export type DemoConnection = {
 };
 
 const ACTIVE_DEMO_SESSION_KEY = "walt-active-demo-session";
-const CAPTION_START_DELAY_MS = 360;
-const CAPTION_WORDS_PER_SECOND = 2.8;
-const CAPTION_LINE_WORDS = 5;
-const CAPTION_VISIBLE_LINES = 2;
 
 export async function connectDemo(
 	callbacks: DemoCallbacks,
@@ -70,7 +77,6 @@ export async function connectDemo(
 	let microphone: MediaStream | undefined;
 	let closed = false;
 	let poll: number | undefined;
-	let captionTimer: number | undefined;
 	window.addEventListener("pagehide", handlePageHide);
 
 	function handlePageHide() {
@@ -98,9 +104,6 @@ export async function connectDemo(
 	function stopLocalConnection() {
 		if (poll !== undefined) {
 			window.clearInterval(poll);
-		}
-		if (captionTimer !== undefined) {
-			window.clearInterval(captionTimer);
 		}
 		for (const track of microphone?.getTracks() ?? []) {
 			track.stop();
@@ -130,24 +133,18 @@ export async function connectDemo(
 		let assistantTranscript = "";
 		let assistantTranscriptItemId: string | undefined;
 		let assistantTranscriptResponseId: string | undefined;
-		let captionPlaybackStartedAt = 0;
 		let captionPlaybackActive = false;
 
 		function updateAssistantCaption() {
-			if (!captionPlaybackActive || !assistantTranscript) {
+			if (!captionPlaybackActive) {
 				return;
 			}
 
-			const elapsedSeconds = Math.max(
-				0,
-				(performance.now() - captionPlaybackStartedAt) / 1000,
-			);
-			const spokenWordCount = Math.floor(
-				elapsedSeconds * CAPTION_WORDS_PER_SECOND,
-			);
-			callbacks.onAssistantCaption(
-				captionWindow(assistantTranscript, spokenWordCount),
-			);
+			callbacks.onAssistantCaptionEvent({
+				type: "updated",
+				responseId: assistantTranscriptResponseId,
+				transcript: assistantTranscript,
+			});
 		}
 
 		function startAssistantCaption(responseId?: string) {
@@ -157,26 +154,35 @@ export async function connectDemo(
 			}
 			assistantTranscriptResponseId = responseId;
 			captionPlaybackActive = true;
-			captionPlaybackStartedAt = performance.now() + CAPTION_START_DELAY_MS;
-			callbacks.onAssistantCaption("");
+			callbacks.onAssistantCaptionEvent({
+				type: "started",
+				responseId: assistantTranscriptResponseId,
+				transcript: assistantTranscript,
+			});
 			callbacks.onVoiceActivity("speaking");
-			if (captionTimer === undefined) {
-				captionTimer = window.setInterval(updateAssistantCaption, 80);
-			}
 		}
 
-		function stopAssistantCaption(showCompletedTranscript: boolean) {
+		function stopAssistantCaption(responseId?: string) {
+			if (responseId) {
+				assistantTranscriptResponseId = responseId;
+			}
 			updateAssistantCaption();
+			if (captionPlaybackActive) {
+				callbacks.onAssistantCaptionEvent({
+					type: "stopped",
+					responseId: assistantTranscriptResponseId,
+				});
+			}
 			captionPlaybackActive = false;
-			if (captionTimer !== undefined) {
-				window.clearInterval(captionTimer);
-				captionTimer = undefined;
-			}
-			if (showCompletedTranscript && assistantTranscript) {
-				callbacks.onAssistantCaption(
-					captionWindow(assistantTranscript, Number.POSITIVE_INFINITY, true),
-				);
-			}
+			callbacks.onVoiceActivity("listening");
+		}
+
+		function clearAssistantCaption(responseId?: string) {
+			callbacks.onAssistantCaptionEvent({
+				type: "cleared",
+				responseId: responseId ?? assistantTranscriptResponseId,
+			});
+			captionPlaybackActive = false;
 			callbacks.onVoiceActivity("listening");
 		}
 
@@ -223,12 +229,12 @@ export async function connectDemo(
 			}
 
 			if (event.type === "output_audio_buffer.stopped") {
-				stopAssistantCaption(true);
+				stopAssistantCaption(event.response_id);
 				return;
 			}
 
 			if (event.type === "output_audio_buffer.cleared") {
-				stopAssistantCaption(false);
+				clearAssistantCaption(event.response_id);
 				return;
 			}
 
@@ -242,7 +248,7 @@ export async function connectDemo(
 			}
 
 			if (event.type === "input_audio_buffer.speech_started") {
-				stopAssistantCaption(false);
+				clearAssistantCaption();
 				callbacks.onUserTranscript("");
 				return;
 			}
@@ -315,39 +321,6 @@ export async function connectDemo(
 		await close();
 		throw error;
 	}
-}
-
-function captionWindow(
-	transcript: string,
-	spokenWordCount = Number.POSITIVE_INFINITY,
-	includePartialLine = false,
-) {
-	const normalizedTranscript = transcript.trim();
-	if (!normalizedTranscript) {
-		return "";
-	}
-
-	const words = normalizedTranscript.split(/\s+/);
-	const spokenWords = words.slice(0, spokenWordCount);
-	const lines: string[] = [];
-	let line: string[] = [];
-
-	for (const word of spokenWords) {
-		line.push(word);
-		if (line.length >= CAPTION_LINE_WORDS || endsCaptionPhrase(word)) {
-			lines.push(line.join(" "));
-			line = [];
-		}
-	}
-	if (includePartialLine && line.length > 0) {
-		lines.push(line.join(" "));
-	}
-
-	return lines.slice(-CAPTION_VISIBLE_LINES).join("\n");
-}
-
-function endsCaptionPhrase(word: string) {
-	return /[.!?;:]["'’”)]?$/.test(word);
 }
 
 function isMeetingCardOutput(event: RealtimeEvent) {

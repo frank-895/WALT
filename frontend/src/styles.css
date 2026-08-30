@@ -654,14 +654,21 @@ button {
 .narration {
 	display: flex;
 	align-items: center;
-	gap: 12px;
+	width: 100%;
 	min-width: 0;
 	padding: 0 10px 0 59px;
-	transition: opacity 220ms var(--ease-out);
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 180ms var(--ease-out);
+}
+
+.narration[data-visible="true"] {
+	opacity: 1;
 }
 
 .narration p {
 	display: -webkit-box;
+	width: 100%;
 	overflow: hidden;
 	block-size: 2.8em;
 	margin: 0;
@@ -670,9 +677,13 @@ button {
 	letter-spacing: 0;
 	line-height: 1.4;
 	text-overflow: ellipsis;
-	white-space: pre-line;
+	white-space: normal;
 	-webkit-box-orient: vertical;
 	-webkit-line-clamp: 2;
+}
+
+.caption-word {
+	animation: caption-word-in var(--sst-duration) var(--sst-easing) both;
 }
 
 .meeting-page {
@@ -1027,8 +1038,8 @@ button {
 	}
 
 	.experience[data-stage="demo"] .narration {
-		justify-self: center;
-		width: min(100%, 1440px);
+		justify-self: stretch;
+		width: 100%;
 	}
 
 	.experience[data-stage="demo"] .guide-orb {
@@ -1050,15 +1061,21 @@ button {
 		opacity: 0;
 		transform: translateY(12px);
 	}
-
-	.narration {
-		opacity: 0;
-	}
 }
 
 @keyframes voice-bar {
 	to {
 		transform: scaleY(2.4);
+	}
+}
+
+@keyframes caption-word-in {
+	from {
+		opacity: 0;
+	}
+
+	to {
+		opacity: 1;
 	}
 }
 
@@ -1315,7 +1332,8 @@ button {
 
 	.guide-orb-core,
 	.guide-orb-core::after,
-	.voice-status i {
+	.voice-status i,
+	.caption-word {
 		animation: none;
 	}
 

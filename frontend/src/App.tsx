@@ -6,9 +6,15 @@ import {
 	RotateCcw,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import {
+	Reveal,
+	RevealProvider,
+	useSmoothStreamController,
+} from "smooth-stream-text/react";
 
 import { DesktopViewer } from "./DesktopViewer";
 import {
+	type AssistantCaptionEvent,
 	connectDemo,
 	type DemoConnection,
 	type DemoSession,
@@ -26,6 +32,8 @@ type ExperienceStage =
 	| "error";
 
 const HANDOFF_DURATION_MS = 500;
+const CAPTION_REVEAL_DURATION_MS = 180;
+const CAPTION_WORD_STAGGER_MS = 36;
 
 const waltLetters = [
 	{ letter: "W", meaning: "walkthrough" },
@@ -44,10 +52,15 @@ export function App() {
 	const demoConnection = useRef<DemoConnection | null>(null);
 	const isConnecting = useRef(false);
 	const isMeetingEndState = useRef(window.location.hash === "#meeting");
+	const {
+		generation: assistantCaptionGeneration,
+		handleEvent: handleAssistantCaptionEvent,
+		reset: resetAssistantCaption,
+		text: assistantCaptionText,
+	} = useAssistantCaption();
 	const [stage, setStage] = useState<ExperienceStage>(initialExperienceStage);
 	const [activeLetter, setActiveLetter] = useState<number | null>(null);
 	const [assistantTranscript, setAssistantTranscript] = useState("");
-	const [assistantCaption, setAssistantCaption] = useState("");
 	const [userTranscript, setUserTranscript] = useState("");
 	const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>("idle");
 	const [viewUrl, setViewUrl] = useState<string | null>(null);
@@ -132,8 +145,8 @@ export function App() {
 
 		isConnecting.current = true;
 		setError(null);
+		resetAssistantCaption();
 		setAssistantTranscript("");
-		setAssistantCaption("");
 		setUserTranscript("");
 		setVoiceActivity("idle");
 		setViewUrl(null);
@@ -145,7 +158,7 @@ export function App() {
 			const connection = await connectDemo({
 				onSession: handleSessionUpdate,
 				onAssistantTranscript: setAssistantTranscript,
-				onAssistantCaption: setAssistantCaption,
+				onAssistantCaptionEvent: handleAssistantCaptionEvent,
 				onUserTranscript: setUserTranscript,
 				onVoiceActivity: setVoiceActivity,
 				onMeetingCard: handleMeetingCard,
@@ -168,7 +181,12 @@ export function App() {
 		} finally {
 			isConnecting.current = false;
 		}
-	}, [handleMeetingCard, handleSessionUpdate]);
+	}, [
+		handleAssistantCaptionEvent,
+		handleMeetingCard,
+		handleSessionUpdate,
+		resetAssistantCaption,
+	]);
 
 	useEffect(() => {
 		if (
@@ -194,6 +212,8 @@ export function App() {
 		stage === "preparing" ||
 		stage === "handoff";
 	const onboardingTranscript = assistantTranscript || "Walt is getting ready…";
+	const isCaptionVisible =
+		isDemo && voiceActivity === "speaking" && Boolean(assistantCaptionText);
 
 	if (stage === "landing") {
 		return (
@@ -271,82 +291,155 @@ export function App() {
 	}
 
 	return (
-		<main
-			className="experience"
-			data-desktop-ready={isDesktopLoaded}
-			data-stage={stage}
+		<RevealProvider
+			blurPx={0}
+			className="caption-word"
+			durationMs={CAPTION_REVEAL_DURATION_MS}
+			easing="cubic-bezier(0.23, 1, 0.32, 1)"
+			injectStyles={false}
+			resetKey={assistantCaptionGeneration}
+			respectReducedMotion
+			staggerMs={CAPTION_WORD_STAGGER_MS}
+			translatePx={0}
+			unit="word"
 		>
-			<div className="desktop">
-				<DesktopViewer
-					onReady={handleDesktopReady}
-					previewUrl={viewUrl ?? undefined}
-				/>
-			</div>
-
-			<div
-				className={`guide-orb ${isRevealingDesktop ? "guide-orb-demo" : "guide-orb-onboarding"}`}
-				data-activity={voiceActivity}
-				aria-hidden="true"
+			<main
+				className="experience"
+				data-desktop-ready={isDesktopLoaded}
+				data-stage={stage}
 			>
-				<span className="guide-orb-core" />
-			</div>
-
-			{!isDemo && (
-				<section className="onboarding" aria-label="Voice demo onboarding">
-					<div className="onboarding-step" key={stage}>
-						{stage === "connecting" && <h1>Getting Walt on the line…</h1>}
-
-						{stage === "conversation" && (
-							<>
-								<h1 className="voice-question" aria-live="polite">
-									{onboardingTranscript}
-								</h1>
-								{userTranscript && (
-									<p className="user-transcript">“{userTranscript}”</p>
-								)}
-							</>
-						)}
-
-						{stage === "preparing" && <h1>Got it. Building your demo…</h1>}
-
-						{stage === "handoff" && <h1>Your demo is ready.</h1>}
-
-						{stage === "error" && (
-							<div className="onboarding-error">
-								<h1>Walt lost the line.</h1>
-								<p role="alert">
-									{error ?? "The voice session could not be started."}
-								</p>
-								<button
-									className="begin-button"
-									type="button"
-									onClick={startVoiceSession}
-								>
-									<RotateCcw aria-hidden="true" />
-									Try again
-								</button>
-							</div>
-						)}
-					</div>
-				</section>
-			)}
-
-			{isDemo && (
-				<div className="narration" data-activity={voiceActivity}>
-					<p aria-live="polite">
-						{assistantCaption ||
-							(voiceActivity === "speaking"
-								? "…"
-								: "Walt is ready when you are.")}
-					</p>
+				<div className="desktop">
+					<DesktopViewer
+						onReady={handleDesktopReady}
+						previewUrl={viewUrl ?? undefined}
+					/>
 				</div>
-			)}
 
-			<span className="sr-only" aria-live="polite">
-				{isVoiceActive ? voiceActivityLabels[voiceActivity] : ""}
-			</span>
-		</main>
+				<div
+					className={`guide-orb ${isRevealingDesktop ? "guide-orb-demo" : "guide-orb-onboarding"}`}
+					data-activity={voiceActivity}
+					aria-hidden="true"
+				>
+					<span className="guide-orb-core" />
+				</div>
+
+				{!isDemo && (
+					<section className="onboarding" aria-label="Voice demo onboarding">
+						<div className="onboarding-step" key={stage}>
+							{stage === "connecting" && <h1>Getting Walt on the line…</h1>}
+
+							{stage === "conversation" && (
+								<>
+									<h1 className="voice-question" aria-live="polite">
+										{onboardingTranscript}
+									</h1>
+									{userTranscript && (
+										<p className="user-transcript">“{userTranscript}”</p>
+									)}
+								</>
+							)}
+
+							{stage === "preparing" && <h1>Got it. Building your demo…</h1>}
+
+							{stage === "handoff" && <h1>Your demo is ready.</h1>}
+
+							{stage === "error" && (
+								<div className="onboarding-error">
+									<h1>Walt lost the line.</h1>
+									<p role="alert">
+										{error ?? "The voice session could not be started."}
+									</p>
+									<button
+										className="begin-button"
+										type="button"
+										onClick={startVoiceSession}
+									>
+										<RotateCcw aria-hidden="true" />
+										Try again
+									</button>
+								</div>
+							)}
+						</div>
+					</section>
+				)}
+
+				{isDemo && (
+					<div
+						aria-hidden={!isCaptionVisible}
+						className="narration"
+						data-visible={isCaptionVisible}
+					>
+						<p aria-live="polite">
+							<Reveal>{assistantCaptionText}</Reveal>
+						</p>
+					</div>
+				)}
+
+				<span className="sr-only" aria-live="polite">
+					{isVoiceActive ? voiceActivityLabels[voiceActivity] : ""}
+				</span>
+			</main>
+		</RevealProvider>
 	);
+}
+
+function useAssistantCaption() {
+	const controller = useSmoothStreamController({
+		boundary: "word",
+		settleMs: 200,
+		targetLatencyMs: 180,
+	});
+	const controllerRef = useRef(controller);
+	const responseIdRef = useRef<string | undefined>(undefined);
+	const [generation, setGeneration] = useState(0);
+	controllerRef.current = controller;
+
+	const handleEvent = useCallback((event: AssistantCaptionEvent) => {
+		const currentController = controllerRef.current;
+
+		if (event.type === "started") {
+			responseIdRef.current = event.responseId;
+			currentController.reset();
+			currentController.setSource(event.transcript);
+			setGeneration((currentGeneration) => currentGeneration + 1);
+			return;
+		}
+
+		if (
+			event.responseId &&
+			responseIdRef.current &&
+			event.responseId !== responseIdRef.current
+		) {
+			return;
+		}
+
+		if (event.type === "updated") {
+			currentController.setSource(event.transcript);
+			return;
+		}
+
+		if (event.type === "stopped") {
+			currentController.end();
+			return;
+		}
+
+		responseIdRef.current = undefined;
+		currentController.reset();
+		setGeneration((currentGeneration) => currentGeneration + 1);
+	}, []);
+
+	const reset = useCallback(() => {
+		responseIdRef.current = undefined;
+		controllerRef.current.reset();
+		setGeneration((currentGeneration) => currentGeneration + 1);
+	}, []);
+
+	return {
+		generation,
+		handleEvent,
+		reset,
+		text: controller.text,
+	};
 }
 
 function MeetingPage() {
