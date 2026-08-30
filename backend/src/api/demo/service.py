@@ -126,7 +126,7 @@ class DemoService:
             id=session.id,
             status=session.status,
             expires_at=session.expires_at,
-            view_url=session.view_url,
+            view_url=session.view_url if session.status == "ready" else None,
             error=session.error,
         )
 
@@ -174,22 +174,25 @@ class DemoService:
                     session.error or "The demo sandbox could not be prepared"
                 )
             session.status = "preparing"
+            session.error = None
             try:
                 await self._sandboxes.upload_seed(session.sandbox, generate_seed(brief))
-                await self._sandboxes.start_demo(session.sandbox)
+                await self._sandboxes.reload_demo(session.sandbox)
                 controller = self._sandboxes.browser_controller(session.sandbox)
                 observation = await controller.execute(ObserveAction(action="observe"))
             except Exception as error:
-                session.status = "failed"
-                session.error = "Atomic could not be prepared."
+                session.status = "onboarding"
                 logger.warning(
                     "demo_prepare_failed",
                     extra={
                         "demo_session_id": session.id,
                         "error_type": type(error).__name__,
+                        "error_message": str(error),
                     },
                 )
-                raise DemoNotReadyError(session.error) from error
+                raise DemoNotReadyError(
+                    "Atomic was not ready yet; try prepare_demo again."
+                ) from error
             session.controller = controller
             session.seed_digest = digest
             session.initial_observation = observation
@@ -257,6 +260,7 @@ class DemoService:
         try:
             session.sandbox = await self._sandboxes.create(session.id)
             await self._sandboxes.start_desktop(session.sandbox)
+            await self._sandboxes.start_demo(session.sandbox)
             remaining_seconds = max(
                 1, int((session.expires_at - datetime.now(UTC)).total_seconds())
             )

@@ -109,7 +109,7 @@ while time.monotonic() < deadline:
             for node in nodes
             if node.get("role", {}).get("value") == "link"
         }
-        if ready and last_page.get("title") == "Atomic CRM" and required_links <= last_links:
+        if ready and "Atomic CRM" in last_page.get("title", "") and required_links <= last_links:
             print(last_page)
             print(f"CRM links ready: {sorted(required_links)}")
             break

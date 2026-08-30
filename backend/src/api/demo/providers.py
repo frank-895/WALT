@@ -11,7 +11,7 @@ from daytona import (
 )
 
 from api.demo.browser import BrowserController, ProcessResult, ScreenshotResult
-from api.demo.browser_harness import BROWSER_ACTION_COMMAND
+from api.demo.browser_harness import BROWSER_ACTION_COMMAND, RELOAD_DEMO_COMMAND
 from api.settings import Settings
 
 
@@ -40,6 +40,10 @@ class SandboxProvider(Protocol):
 
     async def start_demo(self, sandbox: Any) -> None:
         """Start Chromium and wait for Atomic readiness."""
+        ...
+
+    async def reload_demo(self, sandbox: Any) -> None:
+        """Reload Atomic after uploading the visitor seed."""
         ...
 
     def browser_controller(self, sandbox: Any) -> BrowserController:
@@ -205,6 +209,19 @@ class DaytonaSandboxProvider:
         result = await sandbox.process.exec(self._settings.start_command, timeout=60)
         if result.exit_code != 0:
             raise RuntimeError("Atomic startup command failed")
+
+    async def reload_demo(self, sandbox: AsyncSandbox) -> None:
+        """Reload the prewarmed Atomic tab with the visitor seed.
+
+        Args:
+            sandbox: Seeded Daytona sandbox with Chromium already running.
+
+        Raises:
+            RuntimeError: Atomic does not finish loading the tailored seed.
+        """
+        result = await sandbox.process.exec(RELOAD_DEMO_COMMAND, timeout=20)
+        if result.exit_code != 0:
+            raise RuntimeError("Atomic seed reload failed")
 
     def browser_controller(self, sandbox: AsyncSandbox) -> BrowserController:
         """Create the safe browser adapter for one Chromium session.

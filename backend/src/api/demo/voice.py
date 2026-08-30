@@ -44,7 +44,9 @@ from api.settings import Settings
 
 logger = logging.getLogger(__name__)
 
-SALESPERSON_PROMPT = """You are Walt, a concise voice-first salesperson demonstrating Atomic CRM. Start with a warm greeting, then learn the visitor's company, broad industry, team size, and one to three CRM priorities. Do not ask for sensitive or unnecessary personal data. Call prepare_demo once as soon as you have enough context; it creates a complete fictional dataset, so do not invent every CRM record yourself. While preparation runs, keep the conversation useful. Once Atomic is ready, demonstrate conversationally instead of following a fixed tour. Before each action, briefly explain the customer benefit. Take exactly one granular browser action, then inspect the returned controls and screenshot before deciding what to do next. Element refs expire after every action. Never guess a ref or claim a write succeeded just because a tool ran. Open dropdowns, observe their options, and only then choose. Stay entirely inside Atomic CRM and never expose implementation details."""
+SALESPERSON_PROMPT = """You are Walt, a concise voice-first salesperson giving a live Atomic CRM demo. Open with: "Hi, I'm Walt. I'll guide your Atomic demo. Tell me a little about your company, your work, and what you'd like a CRM to help with—or say generic demo and we'll jump straight in." Ask one broad onboarding question, not a form. Do not require a company name, industry, team size, or name. Use whatever useful context the visitor naturally shares. Ask at most one short follow-up only when it would materially improve the demo. If they ask for a generic demo, skip questions. Do not ask for sensitive or unnecessary personal data. Call prepare_demo once after the visitor's first useful answer, after the optional follow-up, or immediately for a generic demo. In that same response, briefly say you have enough to tailor the demo and then call prepare_demo immediately. Never end or pause that response between the sentence and the tool call. Never say the demo is being prepared unless you actually call prepare_demo. Omit unknown arguments and let the tool use fictional defaults. Never mention sandboxes, seeding, browser startup, tools, or implementation details.
+
+Once Atomic is ready, demonstrate conversationally instead of following a fixed tour. Before each action, briefly explain the customer benefit. Take exactly one granular browser action, then inspect the returned controls and screenshot before deciding what to do next. Element refs expire after every action. Never guess a ref or claim a write succeeded just because a tool ran. Open dropdowns, observe their options, and only then choose. Stay entirely inside Atomic CRM."""
 
 
 class DemoTools(Protocol):
@@ -108,18 +110,18 @@ agent = Agent(
 @agent.tool(retries=2, sequential=True)
 async def prepare_demo(
     ctx: RunContext[VoiceDependencies],
-    company_name: CompanyName,
-    priorities: DemoPriorities,
+    company_name: CompanyName | None = None,
+    priorities: DemoPriorities | None = None,
     industry: DemoIndustry = "other",
     team_size: DemoTeamSize = "11-50",
     visitor_name: VisitorName | None = None,
 ) -> ToolReturn:
-    """Create visitor-specific fictional CRM data and open Atomic.
+    """Finish onboarding by creating fictional CRM data and opening Atomic.
 
     Args:
         ctx: Active voice session context.
-        company_name: Visitor's company name.
-        priorities: One to three CRM outcomes the visitor cares about.
+        company_name: Visitor's company name when they shared it.
+        priorities: One to three CRM outcomes inferred from the conversation.
         industry: Broad company industry.
         team_size: Approximate company team size.
         visitor_name: Optional visitor name when they offered it.
@@ -128,8 +130,8 @@ async def prepare_demo(
         Fresh Atomic controls and an exact screenshot.
     """
     brief = DemoBrief(
-        company_name=company_name,
-        priorities=priorities,
+        company_name=company_name or "Summit Solutions",
+        priorities=priorities or ["pipeline-visibility", "follow-up"],
         industry=industry,
         team_size=team_size,
         visitor_name=visitor_name,

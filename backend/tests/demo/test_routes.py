@@ -1,12 +1,14 @@
+import asyncio
 import base64
 import json
 from dataclasses import dataclass
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from api.demo.browser import BrowserController
-from api.demo.models import DemoBrief, VoiceAnswer
+from api.demo.models import DemoBrief, DemoNotReadyError, VoiceAnswer
 from api.main import create_app
 from api.settings import Settings
 
@@ -44,6 +46,8 @@ class FakeSandboxProvider:
     def __init__(self) -> None:
         self.seed: dict[str, Any] | None = None
         self.deleted = 0
+        self.started = 0
+        self.reloaded = 0
         self.browser = FakeBrowserSandbox()
 
     async def create(self, session_id: str) -> object:
@@ -59,7 +63,10 @@ class FakeSandboxProvider:
         self.seed = seed
 
     async def start_demo(self, sandbox: object) -> None:
-        return None
+        self.started += 1
+
+    async def reload_demo(self, sandbox: object) -> None:
+        self.reloaded += 1
 
     def browser_controller(self, sandbox: object) -> BrowserController:
         return BrowserController(
@@ -75,6 +82,18 @@ class FakeSandboxProvider:
 
     async def close(self) -> None:
         return None
+
+
+class FlakySandboxProvider(FakeSandboxProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reload_attempts = 0
+
+    async def reload_demo(self, sandbox: object) -> None:
+        self.reload_attempts += 1
+        if self.reload_attempts == 1:
+            raise RuntimeError("Atomic readiness timed out")
+        await super().reload_demo(sandbox)
 
 
 class FakeVoiceRuntime:
@@ -102,6 +121,14 @@ class FakeVoiceRuntime:
 
     async def close(self) -> None:
         return None
+
+
+class PassiveVoiceRuntime(FakeVoiceRuntime):
+    async def answer_offer(
+        self, session_id: str, sdp_offer: str, demo_tools: Any
+    ) -> VoiceAnswer:
+        self.offers.append(sdp_offer)
+        return VoiceAnswer(sdp="answer-sdp", call_id="call-1")
 
 
 def test_voice_demo_session_lifecycle() -> None:
@@ -146,6 +173,8 @@ def test_voice_demo_session_lifecycle() -> None:
     assert voice.closed_sessions == [session_id]
     assert sandboxes.seed is not None
     assert sandboxes.seed["companies"][0]["name"] == "Acme"
+    assert sandboxes.started == 1
+    assert sandboxes.reloaded == 1
     assert sandboxes.deleted == 1
 
 
@@ -168,3 +197,62 @@ def test_offer_rejects_empty_sdp_and_unknown_session() -> None:
             client.post("/api/demo-sessions/missing/offer", content="v=0").status_code
             == 404
         )
+
+
+def test_voice_connects_while_desktop_stays_hidden_during_onboarding() -> None:
+    voice = PassiveVoiceRuntime()
+    app = create_app(
+        Settings(environment="test"),
+        sandbox_provider=FakeSandboxProvider(),
+        voice_runtime=voice,
+    )
+
+    with TestClient(app) as client:
+        session_id = client.post("/api/demo-sessions").json()["id"]
+        offered = client.post(
+            f"/api/demo-sessions/{session_id}/offer",
+            content="v=0",
+            headers={"Content-Type": "application/sdp"},
+        )
+        status = client.get(f"/api/demo-sessions/{session_id}")
+
+        assert offered.status_code == 200
+        assert status.json()["status"] == "onboarding"
+        assert status.json()["view_url"] is None
+
+    assert voice.offers == ["v=0"]
+
+
+def test_prepare_failure_remains_retryable() -> None:
+    sandboxes = FlakySandboxProvider()
+    voice = PassiveVoiceRuntime()
+    app = create_app(
+        Settings(environment="test"),
+        sandbox_provider=sandboxes,
+        voice_runtime=voice,
+    )
+    brief = DemoBrief(
+        company_name="Acme",
+        industry="technology",
+        team_size="11-50",
+        priorities=["pipeline-visibility"],
+    )
+
+    with TestClient(app) as client:
+        session_id = client.post("/api/demo-sessions").json()["id"]
+        service = app.state.demo_service
+
+        with pytest.raises(DemoNotReadyError, match="try prepare_demo again"):
+            asyncio.run(service.prepare(session_id, brief))
+
+        failed_attempt = client.get(f"/api/demo-sessions/{session_id}").json()
+        assert failed_attempt["status"] == "onboarding"
+        assert failed_attempt["error"] is None
+
+        result = asyncio.run(service.prepare(session_id, brief))
+        assert result.title == "Atomic CRM"
+        assert (
+            client.get(f"/api/demo-sessions/{session_id}").json()["status"] == "ready"
+        )
+
+    assert sandboxes.reload_attempts == 2

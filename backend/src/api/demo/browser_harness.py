@@ -136,3 +136,31 @@ if action not in {"observe", "wait"}:
 
 print(json.dumps(observe(), separators=(",", ":")))
 PY"""
+
+RELOAD_DEMO_COMMAND = r"""BU_CDP_URL="$CHROMIUM_CDP_URL" browser-use <<'PY'
+import os
+import time
+
+ensure_real_tab()
+goto_url(os.environ["ATOMIC_URL"])
+
+deadline = time.monotonic() + 15
+while time.monotonic() < deadline:
+    try:
+        ensure_real_tab()
+        error = js("document.documentElement.dataset.waltError")
+        if error:
+            raise RuntimeError(f"Atomic failed to prepare: {error}")
+        if (
+            js("document.documentElement.dataset.waltReady") == "true"
+            and "Atomic CRM" in page_info()["title"]
+        ):
+            break
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+    time.sleep(0.1)
+else:
+    raise RuntimeError("Atomic did not load the tailored demo data")
+PY"""

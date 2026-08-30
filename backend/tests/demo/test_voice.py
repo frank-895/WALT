@@ -22,9 +22,13 @@ def test_voice_agent_exposes_only_seven_small_sequential_tools() -> None:
         "browser_wait",
     ]
     assert all(tool.sequential for tool in tools.values())
+    assert tools["prepare_demo"].max_retries == 2
     prepare_schema = tools["prepare_demo"].function_schema.json_schema
-    assert prepare_schema["properties"]["priorities"]["minItems"] == 1
-    assert prepare_schema["properties"]["priorities"]["maxItems"] == 3
+    priority_schema = prepare_schema["properties"]["priorities"]["anyOf"][0]
+    assert priority_schema["minItems"] == 1
+    assert priority_schema["maxItems"] == 3
+    assert "company_name" not in prepare_schema.get("required", [])
+    assert "priorities" not in prepare_schema.get("required", [])
     assert prepare_schema["properties"]["team_size"]["enum"] == [
         "1-10",
         "11-50",
