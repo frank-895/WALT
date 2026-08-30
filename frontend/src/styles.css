@@ -3,8 +3,7 @@
 	--ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
 	color: #181916;
 	background: #f3f3ef;
-	font-family:
-		ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
 	font-synthesis: none;
 	text-rendering: optimizeLegibility;
 }
@@ -19,6 +18,11 @@ body {
 	margin: 0;
 }
 
+a {
+	color: inherit;
+	text-decoration: none;
+}
+
 button,
 input {
 	font: inherit;
@@ -26,6 +30,212 @@ input {
 
 button {
 	cursor: pointer;
+}
+
+.landing {
+	overflow-x: hidden;
+	background: #f3f3ef;
+}
+
+.landing-hero {
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	min-height: 100svh;
+	padding: clamp(24px, 4vw, 64px);
+}
+
+.walt-lockup {
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	width: 100%;
+	margin: 0;
+	gap: clamp(2px, 0.7vw, 12px);
+}
+
+.walt-letter-item {
+	position: relative;
+	display: grid;
+	min-width: 0;
+	place-items: center;
+}
+
+.walt-letter {
+	padding: 0;
+	color: #181916;
+	background: transparent;
+	border: 0;
+	font-family: inherit;
+	font-size: clamp(104px, 23vw, 380px);
+	font-weight: 700;
+	letter-spacing: 0;
+	line-height: 0.72;
+	transition:
+		color 160ms ease,
+		transform 180ms var(--ease-in-out);
+}
+
+.walt-letter:focus-visible {
+	outline: 3px solid #a9c63d;
+	outline-offset: 8px;
+}
+
+.letter-meaning {
+	position: absolute;
+	top: calc(100% + clamp(14px, 2vw, 24px));
+	left: 50%;
+	color: #7e981e;
+	font-size: clamp(18px, 2vw, 28px);
+	font-weight: 700;
+	letter-spacing: -0.035em;
+	line-height: 1;
+	opacity: 0;
+	pointer-events: none;
+	transform: translate(-50%, -30%) scale(0.96);
+	transition:
+		opacity 160ms var(--ease-out),
+		transform 180ms var(--ease-out);
+	white-space: nowrap;
+}
+
+.walt-letter-item[data-active="true"] .walt-letter,
+.walt-letter:focus-visible {
+	color: #7e981e;
+	transform: translateY(-4%);
+}
+
+.walt-letter-item[data-active="true"] .letter-meaning,
+.walt-letter:focus-visible + .letter-meaning {
+	opacity: 1;
+	transform: translate(-50%, 0) scale(1);
+}
+
+.demo-button {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	width: min(520px, 100%);
+	margin: clamp(86px, 12vh, 124px) auto 0;
+	padding: 17px 18px 17px 28px;
+	color: #f7f8f2;
+	background: #181916;
+	border: 1px solid rgba(255, 255, 255, 0.08);
+	border-radius: 999px;
+	box-shadow:
+		0 2px 3px rgba(24, 25, 22, 0.08),
+		0 18px 60px rgba(24, 25, 22, 0.18);
+	font-size: clamp(26px, 4vw, 42px);
+	font-weight: 500;
+	letter-spacing: -0.035em;
+	line-height: 1;
+	transition:
+		transform 260ms var(--ease-out),
+		box-shadow 260ms var(--ease-out);
+}
+
+.demo-button-arrow {
+	display: grid;
+	width: 58px;
+	height: 58px;
+	color: #181916;
+	background: #d7ef78;
+	border-radius: 50%;
+	place-items: center;
+	transition: transform 260ms var(--ease-out);
+}
+
+.demo-button-arrow svg {
+	width: 29px;
+	height: 29px;
+}
+
+.demo-button:focus-visible {
+	outline: 3px solid #a9c63d;
+	outline-offset: 6px;
+}
+
+.pricing {
+	min-height: 100svh;
+	margin: 0 16px;
+	padding: clamp(56px, 8vw, 120px);
+	color: #f3f3ef;
+	background: #181916;
+	border-radius: 36px 36px 0 0;
+}
+
+.pricing-header {
+	display: grid;
+	grid-template-columns: minmax(120px, 0.35fr) 1fr;
+	gap: 32px;
+	align-items: start;
+}
+
+.pricing-header p,
+.pricing-plan p {
+	margin: 0;
+	font-size: 13px;
+	font-weight: 700;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+}
+
+.pricing-header h2 {
+	max-width: 980px;
+	margin: 0;
+	font-size: clamp(44px, 7vw, 112px);
+	font-weight: 500;
+	letter-spacing: -0.045em;
+	line-height: 0.94;
+}
+
+.pricing-card {
+	display: grid;
+	grid-template-columns: 1.1fr 0.9fr;
+	gap: clamp(40px, 8vw, 120px);
+	margin-top: clamp(64px, 10vw, 148px);
+	padding: clamp(32px, 5vw, 72px);
+	color: #181916;
+	background: #d7ef78;
+	border-radius: 28px;
+}
+
+.pricing-plan h3 {
+	margin: 32px 0 12px;
+	font-size: clamp(58px, 8vw, 126px);
+	font-weight: 700;
+	letter-spacing: -0.05em;
+	line-height: 0.82;
+}
+
+.pricing-plan span {
+	font-size: 15px;
+	letter-spacing: -0.02em;
+}
+
+.pricing-card ul {
+	display: grid;
+	align-content: end;
+	gap: 0;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.pricing-card li {
+	padding: 17px 0;
+	border-top: 1px solid rgba(24, 25, 22, 0.3);
+	font-size: clamp(15px, 1.4vw, 19px);
+	font-weight: 500;
+	letter-spacing: -0.025em;
+}
+
+.pricing-disclaimer {
+	margin: 18px 4px 0 auto;
+	font-size: 11px;
+	letter-spacing: 0.02em;
+	opacity: 0.55;
+	text-align: right;
 }
 
 .experience {
@@ -96,7 +306,7 @@ button {
 .onboarding-step h1 {
 	margin: 0;
 	font-size: clamp(26px, 3.2vw, 44px);
-	font-weight: 450;
+	font-weight: 500;
 	letter-spacing: -0.045em;
 	line-height: 1.15;
 	text-align: center;
@@ -181,7 +391,7 @@ button {
 	overflow: hidden;
 	margin: 0;
 	font-size: clamp(15px, 1.5vw, 19px);
-	font-weight: 450;
+	font-weight: 500;
 	letter-spacing: -0.02em;
 	line-height: 1.4;
 	text-overflow: ellipsis;
@@ -200,6 +410,27 @@ button {
 }
 
 @media (hover: hover) and (pointer: fine) {
+	.walt-letter:hover {
+		color: #7e981e;
+		transform: translateY(-4%);
+	}
+
+	.walt-letter:hover + .letter-meaning {
+		opacity: 1;
+		transform: translate(-50%, 0) scale(1);
+	}
+
+	.demo-button:hover {
+		box-shadow:
+			0 4px 6px rgba(24, 25, 22, 0.08),
+			0 26px 80px rgba(24, 25, 22, 0.24);
+		transform: translateY(-4px);
+	}
+
+	.demo-button:hover .demo-button-arrow {
+		transform: rotate(45deg);
+	}
+
 	.begin-button:hover:not(:active),
 	.onboarding form button:not(:disabled):hover:not(:active) {
 		transform: scale(1.03);
@@ -207,6 +438,70 @@ button {
 }
 
 @media (max-width: 600px) {
+	.landing-hero {
+		justify-content: center;
+		padding: 24px;
+	}
+
+	.walt-letter {
+		font-size: 23vw;
+	}
+
+	.letter-meaning {
+		top: calc(100% + 12px);
+		font-size: 13px;
+	}
+
+	.demo-button {
+		margin-top: 76px;
+		padding: 13px 14px 13px 22px;
+		font-size: 28px;
+	}
+
+	.demo-button-arrow {
+		width: 50px;
+		height: 50px;
+	}
+
+	.demo-button-arrow svg {
+		width: 25px;
+		height: 25px;
+	}
+
+	.pricing {
+		margin: 0 8px;
+		padding: 56px 24px 72px;
+		border-radius: 24px 24px 0 0;
+	}
+
+	.pricing-header,
+	.pricing-card {
+		grid-template-columns: 1fr;
+	}
+
+	.pricing-header {
+		gap: 24px;
+	}
+
+	.pricing-header h2 {
+		font-size: 48px;
+	}
+
+	.pricing-card {
+		gap: 52px;
+		margin-top: 64px;
+		padding: 28px 24px;
+		border-radius: 20px;
+	}
+
+	.pricing-plan h3 {
+		font-size: 64px;
+	}
+
+	.pricing-disclaimer {
+		max-width: 260px;
+	}
+
 	.experience {
 		grid-template-rows: minmax(0, 1fr) 76px;
 		padding: 8px 8px 0;
@@ -250,8 +545,22 @@ button {
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.walt-letter,
+	.letter-meaning,
+	.demo-button,
+	.demo-button-arrow,
 	.guide-orb,
 	.onboarding-step {
 		transition-property: opacity;
+	}
+
+	.letter-meaning {
+		transform: translate(-50%, 0) scale(1);
+	}
+
+	.walt-letter-item[data-active="true"] .walt-letter,
+	.walt-letter:focus-visible,
+	.walt-letter:hover {
+		transform: none;
 	}
 }
