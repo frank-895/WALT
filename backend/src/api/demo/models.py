@@ -152,7 +152,6 @@ class BrowserActionResult(StrictModel):
     title: str
     controls: list[BrowserControl]
     highlight_targets: list[BrowserHighlightTarget] = Field(default_factory=list)
-    state_stable: bool = True
     screenshot: str
 
 
