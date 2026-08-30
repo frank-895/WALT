@@ -1,29 +1,24 @@
-import { ArrowUpRight } from "lucide-react";
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { ArrowUpRight, RotateCcw } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-type OnboardingStage =
+import { DesktopViewer } from "./DesktopViewer";
+import {
+	connectDemo,
+	type DemoConnection,
+	type DemoSession,
+	type VoiceActivity,
+} from "./realtime";
+
+type ExperienceStage =
 	| "landing"
-	| "welcome"
-	| "role"
-	| "outcome"
-	| "clarification"
+	| "connecting"
+	| "conversation"
+	| "preparing"
 	| "handoff"
-	| "demo";
+	| "demo"
+	| "error";
 
-type OnboardingAnswers = {
-	role: string;
-	outcome: string;
-	clarification: string;
-};
-
-const QUESTION_EXIT_DURATION_MS = 120;
-const HANDOFF_DURATION_MS = 650;
-
-const questions = {
-	role: "What kind of work do you do?",
-	outcome: "What would you most like to learn from this demo?",
-	clarification: "What would a successful outcome look like for you?",
-} as const;
+const HANDOFF_DURATION_MS = 700;
 
 const waltLetters = [
 	{ letter: "W", meaning: "walkthrough" },
@@ -32,40 +27,56 @@ const waltLetters = [
 	{ letter: "T", meaning: "talkative" },
 ] as const;
 
-function needsClarification(answer: string) {
-	const normalizedAnswer = answer.trim().toLowerCase();
-	const vagueAnswers = ["anything", "everything", "not sure", "just looking"];
-	return (
-		normalizedAnswer.split(/\s+/).length < 3 ||
-		vagueAnswers.includes(normalizedAnswer)
-	);
-}
+const voiceActivityLabels: Record<VoiceActivity, string> = {
+	idle: "Getting ready",
+	listening: "Listening",
+	speaking: "Walt is speaking",
+};
 
 export function App() {
-	const answerInput = useRef<HTMLInputElement>(null);
-	const [stage, setStage] = useState<OnboardingStage>(
-		window.location.hash === "#demo" ? "welcome" : "landing",
+	const demoConnection = useRef<DemoConnection | null>(null);
+	const isConnecting = useRef(false);
+	const [stage, setStage] = useState<ExperienceStage>(
+		window.location.hash === "#demo" ? "connecting" : "landing",
 	);
-	const [answer, setAnswer] = useState("");
 	const [activeLetter, setActiveLetter] = useState<number | null>(null);
-	const [isQuestionExiting, setIsQuestionExiting] = useState(false);
-	const [answers, setAnswers] = useState<OnboardingAnswers>({
-		role: "",
-		outcome: "",
-		clarification: "",
-	});
+	const [assistantTranscript, setAssistantTranscript] = useState("");
+	const [userTranscript, setUserTranscript] = useState("");
+	const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>("idle");
+	const [viewUrl, setViewUrl] = useState<string | null>(null);
+	const [isDesktopLoaded, setIsDesktopLoaded] = useState(false);
+	const [error, setError] = useState<string | null>(null);
 
 	useEffect(() => {
 		function handleLocationChange() {
-			setStage(window.location.hash === "#demo" ? "welcome" : "landing");
+			if (window.location.hash === "#demo") {
+				setStage((currentStage) =>
+					currentStage === "landing" ? "connecting" : currentStage,
+				);
+				return;
+			}
+
+			void demoConnection.current?.close();
+			demoConnection.current = null;
+			setStage("landing");
 		}
 
 		window.addEventListener("hashchange", handleLocationChange);
-		return () => window.removeEventListener("hashchange", handleLocationChange);
+		window.addEventListener("popstate", handleLocationChange);
+		return () => {
+			window.removeEventListener("hashchange", handleLocationChange);
+			window.removeEventListener("popstate", handleLocationChange);
+		};
 	}, []);
 
 	useEffect(() => {
-		if (stage !== "handoff") {
+		return () => {
+			void demoConnection.current?.close();
+		};
+	}, []);
+
+	useEffect(() => {
+		if (stage !== "handoff" || !isDesktopLoaded) {
 			return;
 		}
 
@@ -74,61 +85,86 @@ export function App() {
 			HANDOFF_DURATION_MS,
 		);
 		return () => window.clearTimeout(timeout);
-	}, [stage]);
+	}, [isDesktopLoaded, stage]);
 
-	function transitionTo(nextStage: OnboardingStage) {
-		if (isQuestionExiting) {
+	const handleSessionUpdate = useCallback((session: DemoSession) => {
+		if (session.status === "onboarding") {
+			setStage("conversation");
+		}
+		if (session.status === "preparing") {
+			setStage("preparing");
+		}
+		if (session.status === "ready" && session.view_url) {
+			setViewUrl(session.view_url);
+			setStage("handoff");
+		}
+	}, []);
+	const handleDesktopReady = useCallback(() => setIsDesktopLoaded(true), []);
+
+	const startVoiceSession = useCallback(async () => {
+		if (isConnecting.current) {
 			return;
 		}
 
-		setIsQuestionExiting(true);
-		window.setTimeout(() => {
-			setAnswer("");
-			setStage(nextStage);
-			setIsQuestionExiting(false);
-			window.requestAnimationFrame(() => answerInput.current?.focus());
-		}, QUESTION_EXIT_DURATION_MS);
-	}
+		isConnecting.current = true;
+		setError(null);
+		setAssistantTranscript("");
+		setUserTranscript("");
+		setVoiceActivity("idle");
+		setViewUrl(null);
+		setIsDesktopLoaded(false);
+		setStage("connecting");
 
-	function handleAnswer(event: FormEvent<HTMLFormElement>) {
-		event.preventDefault();
-		const submittedAnswer = answer.trim();
-
-		if (!submittedAnswer) {
-			return;
-		}
-
-		if (stage === "role") {
-			setAnswers((currentAnswers) => ({
-				...currentAnswers,
-				role: submittedAnswer,
-			}));
-			transitionTo("outcome");
-			return;
-		}
-
-		if (stage === "outcome") {
-			setAnswers((currentAnswers) => ({
-				...currentAnswers,
-				outcome: submittedAnswer,
-			}));
-			transitionTo(
-				needsClarification(submittedAnswer) ? "clarification" : "handoff",
+		try {
+			await demoConnection.current?.close();
+			const connection = await connectDemo({
+				onSession: handleSessionUpdate,
+				onAssistantTranscript: setAssistantTranscript,
+				onUserTranscript: setUserTranscript,
+				onVoiceActivity: setVoiceActivity,
+				onError: (message) => {
+					setError(message);
+					setStage("error");
+				},
+			});
+			if (window.location.hash !== "#demo") {
+				await connection.close();
+				return;
+			}
+			demoConnection.current = connection;
+			setStage((currentStage) =>
+				currentStage === "connecting" ? "conversation" : currentStage,
 			);
-			return;
+		} catch (connectionError) {
+			setError(errorMessage(connectionError));
+			setStage("error");
+		} finally {
+			isConnecting.current = false;
 		}
+	}, [handleSessionUpdate]);
 
-		if (stage === "clarification") {
-			setAnswers((currentAnswers) => ({
-				...currentAnswers,
-				clarification: submittedAnswer,
-			}));
-			transitionTo("handoff");
+	useEffect(() => {
+		if (
+			stage === "connecting" &&
+			window.location.hash === "#demo" &&
+			!demoConnection.current &&
+			!isConnecting.current
+		) {
+			void startVoiceSession();
 		}
+	}, [stage, startVoiceSession]);
+
+	function openDemo() {
+		window.history.pushState(null, "", "#demo");
+		void startVoiceSession();
 	}
 
 	const isDemo = stage === "demo";
-	const demoFocus = answers.clarification || answers.outcome;
+	const isVoiceActive =
+		stage === "connecting" ||
+		stage === "conversation" ||
+		stage === "preparing" ||
+		stage === "handoff";
 
 	if (stage === "landing") {
 		return (
@@ -160,12 +196,12 @@ export function App() {
 							</span>
 						))}
 					</h1>
-					<a className="demo-button" href="#demo">
+					<button className="demo-button" type="button" onClick={openDemo}>
 						<span>meet walt</span>
 						<span className="demo-button-arrow" aria-hidden="true">
 							<ArrowUpRight strokeWidth={2.25} />
 						</span>
-					</a>
+					</button>
 				</section>
 
 				<section className="pricing" aria-labelledby="pricing-title">
@@ -203,71 +239,116 @@ export function App() {
 
 	return (
 		<main className="experience" data-stage={stage}>
-			<div className="desktop" aria-label="Virtual machine screen" role="img" />
+			<div className="desktop">
+				<DesktopViewer
+					onReady={handleDesktopReady}
+					previewUrl={viewUrl ?? undefined}
+				/>
+			</div>
 
 			<div
 				className={`guide-orb ${isDemo ? "guide-orb-demo" : "guide-orb-onboarding"}`}
-				aria-label={isDemo ? "Walt is speaking" : "Walt"}
-				role="img"
+				data-activity={voiceActivity}
+				aria-hidden="true"
 			/>
 
 			{!isDemo && (
-				<section className="onboarding" aria-label="Demo onboarding">
-					<div
-						className="onboarding-step"
-						data-exiting={isQuestionExiting}
-						key={stage}
-					>
-						{stage === "welcome" && (
+				<section className="onboarding" aria-label="Voice demo onboarding">
+					<header className="onboarding-header">
+						<strong>WALT</strong>
+						<VoiceStatus
+							activity={stage === "preparing" ? "idle" : voiceActivity}
+							label={
+								stage === "preparing"
+									? "Building your demo"
+									: stage === "handoff"
+										? "Desktop ready"
+										: stage === "connecting"
+											? "Connecting"
+											: stage === "error"
+												? "Connection lost"
+												: voiceActivityLabels[voiceActivity]
+							}
+						/>
+					</header>
+
+					<div className="onboarding-step" key={stage}>
+						{stage === "connecting" && <h1>Getting Walt on the line…</h1>}
+
+						{stage === "conversation" && (
 							<>
-								<h1>Let’s make this demo useful to you.</h1>
+								<h1 className="voice-question" aria-live="polite">
+									{assistantTranscript || "Tell me briefly about your company."}
+								</h1>
+								{userTranscript && (
+									<p className="user-transcript">“{userTranscript}”</p>
+								)}
+							</>
+						)}
+
+						{stage === "preparing" && <h1>Got it. Building your demo…</h1>}
+
+						{stage === "handoff" && <h1>Your demo is ready.</h1>}
+
+						{stage === "error" && (
+							<div className="onboarding-error">
+								<h1>Walt lost the line.</h1>
+								<p role="alert">
+									{error ?? "The voice session could not be started."}
+								</p>
 								<button
 									className="begin-button"
 									type="button"
-									onClick={() => transitionTo("role")}
+									onClick={startVoiceSession}
 								>
-									Begin
+									<RotateCcw aria-hidden="true" />
+									Try again
 								</button>
-							</>
+							</div>
 						)}
-
-						{(stage === "role" ||
-							stage === "outcome" ||
-							stage === "clarification") && (
-							<>
-								<h1>{questions[stage]}</h1>
-								<form onSubmit={handleAnswer}>
-									<input
-										aria-label={questions[stage]}
-										autoComplete="off"
-										ref={answerInput}
-										value={answer}
-										onChange={(event) => setAnswer(event.target.value)}
-									/>
-									<button
-										aria-label="Continue"
-										disabled={!answer.trim() || isQuestionExiting}
-										type="submit"
-									>
-										→
-									</button>
-								</form>
-							</>
-						)}
-
-						{stage === "handoff" && <h1>Perfect. Let’s begin.</h1>}
 					</div>
 				</section>
 			)}
 
 			{isDemo && (
-				<div className="narration">
+				<div className="narration" data-activity={voiceActivity}>
+					<span className="narration-status" aria-hidden="true" />
 					<p aria-live="polite">
-						I’ll focus on {demoFocus}, keeping it relevant to your work in{" "}
-						{answers.role}.
+						{assistantTranscript || "Walt is ready when you are."}
 					</p>
 				</div>
 			)}
+
+			<span className="sr-only" aria-live="polite">
+				{isVoiceActive ? voiceActivityLabels[voiceActivity] : ""}
+			</span>
 		</main>
 	);
+}
+
+type VoiceStatusProps = {
+	activity: VoiceActivity;
+	label: string;
+};
+
+function VoiceStatus({ activity, label }: VoiceStatusProps) {
+	return (
+		<p className="voice-status" data-activity={activity}>
+			<span aria-hidden="true">
+				<i />
+				<i />
+				<i />
+			</span>
+			{label}
+		</p>
+	);
+}
+
+function errorMessage(error: unknown) {
+	if (error instanceof DOMException && error.name === "NotAllowedError") {
+		return "Microphone access is off. Allow it in your browser, then try again.";
+	}
+	return error instanceof Error
+		? error.message
+		: "The voice session could not be started.";
 }

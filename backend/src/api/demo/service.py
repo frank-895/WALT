@@ -41,6 +41,7 @@ class DemoSession:
     sandbox: Any = None
     controller: BrowserController | None = None
     provision_task: asyncio.Task[None] | None = None
+    delete_task: asyncio.Task[None] | None = None
     prepare_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     seed_digest: str | None = None
     initial_observation: BrowserActionResult | None = None
@@ -230,26 +231,43 @@ class DemoService:
             session_id: Opaque demo identifier.
         """
         async with self._registry_lock:
-            session = self._sessions.pop(session_id, None)
-        if not session:
-            return
-        await self._voice.close_session(session_id)
-        current_task = asyncio.current_task()
-        if (
-            session.provision_task
-            and session.provision_task is not current_task
-            and not session.provision_task.done()
-        ):
-            session.provision_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await session.provision_task
-        if session.sandbox:
-            try:
-                await self._sandboxes.delete(session.sandbox)
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    "sandbox_delete_failed", extra={"demo_session_id": session.id}
+            session = self._sessions.get(session_id)
+            if session and not session.delete_task:
+                session.delete_task = asyncio.create_task(
+                    self._delete_session(session), name=f"delete-{session_id}"
                 )
+            delete_task = session.delete_task if session else None
+        if delete_task:
+            await delete_task
+
+    async def _delete_session(self, session: DemoSession) -> None:
+        """Finish one sandbox teardown before removing its registry entry.
+
+        Args:
+            session: Live session selected for deletion.
+        """
+        session_id = session.id
+        try:
+            await self._voice.close_session(session_id)
+            current_task = asyncio.current_task()
+            if (
+                session.provision_task
+                and session.provision_task is not current_task
+                and not session.provision_task.done()
+            ):
+                with contextlib.suppress(asyncio.CancelledError):
+                    await session.provision_task
+            if session.sandbox:
+                await self._sandboxes.delete(session.sandbox)
+        except Exception:
+            async with self._registry_lock:
+                if self._sessions.get(session_id) is session:
+                    session.delete_task = None
+            raise
+        else:
+            async with self._registry_lock:
+                if self._sessions.get(session_id) is session:
+                    self._sessions.pop(session_id)
 
     async def _provision(self, session: DemoSession) -> None:
         """Create the sandbox, desktop, and signed noVNC preview.

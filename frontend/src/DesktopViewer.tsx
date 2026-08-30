@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import "./DesktopViewer.css";
 
 type DesktopViewerProps = {
+	onReady?: () => void;
 	previewUrl?: string;
 };
 
@@ -15,7 +16,7 @@ function getWebSocketUrl(previewUrl: string) {
 	return url.toString();
 }
 
-export function DesktopViewer({ previewUrl }: DesktopViewerProps) {
+export function DesktopViewer({ onReady, previewUrl }: DesktopViewerProps) {
 	const container = useRef<HTMLElement>(null);
 	const [status, setStatus] = useState<ConnectionStatus>(
 		previewUrl ? "connecting" : "waiting",
@@ -38,7 +39,10 @@ export function DesktopViewer({ previewUrl }: DesktopViewerProps) {
 		rfb.resizeSession = false;
 		rfb.background = "#000";
 
-		const handleConnect = () => setStatus("connected");
+		const handleConnect = () => {
+			setStatus("connected");
+			onReady?.();
+		};
 		const handleDisconnect = () => setStatus("failed");
 
 		rfb.addEventListener("connect", handleConnect);
@@ -49,7 +53,7 @@ export function DesktopViewer({ previewUrl }: DesktopViewerProps) {
 			rfb.removeEventListener("disconnect", handleDisconnect);
 			rfb.disconnect();
 		};
-	}, [previewUrl]);
+	}, [onReady, previewUrl]);
 
 	return (
 		<section

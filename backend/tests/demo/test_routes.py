@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from api.demo.browser import BrowserController
 from api.demo.models import DemoBrief, DemoNotReadyError, VoiceAnswer
+from api.demo.service import DemoService
 from api.main import create_app
 from api.settings import Settings
 
@@ -96,6 +97,30 @@ class FlakySandboxProvider(FakeSandboxProvider):
         await super().reload_demo(sandbox)
 
 
+class BlockingDeleteSandboxProvider(FakeSandboxProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.delete_started = asyncio.Event()
+        self.allow_delete = asyncio.Event()
+
+    async def delete(self, sandbox: object) -> None:
+        self.deleted += 1
+        self.delete_started.set()
+        await self.allow_delete.wait()
+
+
+class BlockingCreateSandboxProvider(FakeSandboxProvider):
+    def __init__(self) -> None:
+        super().__init__()
+        self.create_started = asyncio.Event()
+        self.allow_create = asyncio.Event()
+
+    async def create(self, session_id: str) -> object:
+        self.create_started.set()
+        await self.allow_create.wait()
+        return object()
+
+
 class FakeVoiceRuntime:
     def __init__(self) -> None:
         self.offers: list[str] = []
@@ -176,6 +201,55 @@ def test_voice_demo_session_lifecycle() -> None:
     assert sandboxes.started == 1
     assert sandboxes.reloaded == 1
     assert sandboxes.deleted == 1
+
+
+def test_concurrent_deletes_wait_for_one_sandbox_teardown() -> None:
+    async def run_scenario() -> None:
+        sandboxes = BlockingDeleteSandboxProvider()
+        voice = PassiveVoiceRuntime()
+        service = DemoService(Settings(environment="test"), sandboxes, voice)
+        created = await service.create()
+
+        while (await service.get(created.id)).status == "provisioning":
+            await asyncio.sleep(0)
+
+        first_delete = asyncio.create_task(service.delete(created.id))
+        await sandboxes.delete_started.wait()
+        second_delete = asyncio.create_task(service.delete(created.id))
+        await asyncio.sleep(0)
+
+        assert not first_delete.done()
+        assert not second_delete.done()
+
+        sandboxes.allow_delete.set()
+        await asyncio.gather(first_delete, second_delete)
+
+        assert sandboxes.deleted == 1
+        assert voice.closed_sessions == [created.id]
+
+    asyncio.run(run_scenario())
+
+
+def test_delete_during_provisioning_waits_and_cleans_created_sandbox() -> None:
+    async def run_scenario() -> None:
+        sandboxes = BlockingCreateSandboxProvider()
+        voice = PassiveVoiceRuntime()
+        service = DemoService(Settings(environment="test"), sandboxes, voice)
+        created = await service.create()
+
+        await sandboxes.create_started.wait()
+        delete_task = asyncio.create_task(service.delete(created.id))
+        await asyncio.sleep(0)
+
+        assert not delete_task.done()
+
+        sandboxes.allow_create.set()
+        await delete_task
+
+        assert sandboxes.deleted == 1
+        assert voice.closed_sessions == [created.id]
+
+    asyncio.run(run_scenario())
 
 
 def test_offer_rejects_empty_sdp_and_unknown_session() -> None:

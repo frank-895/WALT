@@ -246,7 +246,7 @@ class DaytonaSandboxProvider:
         Args:
             sandbox: Daytona sandbox to delete.
         """
-        await self._daytona().delete(sandbox, wait=False)
+        await self._daytona().delete(sandbox, wait=True)
 
     async def close(self) -> None:
         """Close the owned Daytona client."""

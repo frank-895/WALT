@@ -27,6 +27,8 @@ services:
       context: ./frontend
       target: development
     init: true
+    environment:
+      WALT_BACKEND_URL: http://backend:8000
     depends_on:
       backend:
         condition: service_healthy
