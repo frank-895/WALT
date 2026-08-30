@@ -1,0 +1,110 @@
+#!/bin/sh
+
+set -eu
+
+profile_directory=/tmp/walt-atomic-chromium
+browser_pid_file=/tmp/walt-atomic-chromium.pid
+browser_log_file=/tmp/walt-atomic-chromium.log
+display_name=${DISPLAY:-:0}
+
+if [ -f "$browser_pid_file" ]; then
+    browser_pid=$(cat "$browser_pid_file")
+    if kill -0 "$browser_pid" 2>/dev/null; then
+        kill "$browser_pid"
+        wait "$browser_pid" 2>/dev/null || true
+    fi
+fi
+
+browser-use --reload >/dev/null 2>&1 || true
+rm -rf "$profile_directory"
+mkdir -p "$profile_directory"
+
+display_attempt=0
+until xdpyinfo -display "$display_name" >/dev/null 2>&1; do
+    display_attempt=$((display_attempt + 1))
+    if [ "$display_attempt" -ge 150 ]; then
+        echo "The Daytona desktop is not ready on ${display_name}." >&2
+        exit 1
+    fi
+    sleep 0.1
+done
+
+chromium \
+    --disable-background-networking \
+    --disable-component-update \
+    --disable-default-apps \
+    --disable-dev-shm-usage \
+    --disable-extensions \
+    --disable-features=Translate \
+    --disable-sync \
+    --no-default-browser-check \
+    --no-first-run \
+    --no-sandbox \
+    --password-store=basic \
+    --kiosk \
+    --app="$ATOMIC_URL" \
+    --remote-debugging-address=127.0.0.1 \
+    --remote-debugging-port=9222 \
+    --user-data-dir="$profile_directory" >"$browser_log_file" 2>&1 &
+
+browser_pid=$!
+echo "$browser_pid" >"$browser_pid_file"
+
+cdp_attempt=0
+until curl --fail --silent "$CHROMIUM_CDP_URL/json/version" >/dev/null; do
+    cdp_attempt=$((cdp_attempt + 1))
+    if ! kill -0 "$browser_pid" 2>/dev/null; then
+        cat "$browser_log_file" >&2
+        exit 1
+    fi
+    if [ "$cdp_attempt" -ge 150 ]; then
+        cat "$browser_log_file" >&2
+        exit 1
+    fi
+    sleep 0.1
+done
+
+if ! BU_CDP_URL="$CHROMIUM_CDP_URL" browser-use <<'PY'
+import time
+
+required_links = {"Companies", "Contacts", "Deals"}
+deadline = time.monotonic() + 30
+last_page = None
+last_links = set()
+
+while time.monotonic() < deadline:
+    try:
+        ensure_real_tab()
+        last_page = page_info()
+        error = js("document.documentElement.dataset.waltError")
+        if error:
+            raise RuntimeError(f"Atomic failed to prepare: {error}")
+
+        ready = js("document.documentElement.dataset.waltReady") == "true"
+        nodes = cdp("Accessibility.getFullAXTree")["nodes"]
+        last_links = {
+            node.get("name", {}).get("value")
+            for node in nodes
+            if node.get("role", {}).get("value") == "link"
+        }
+        if ready and last_page.get("title") == "Atomic CRM" and required_links <= last_links:
+            print(last_page)
+            print(f"CRM links ready: {sorted(required_links)}")
+            break
+    except RuntimeError:
+        raise
+    except Exception:
+        pass
+    time.sleep(0.1)
+else:
+    raise RuntimeError(
+        f"Atomic did not become browser-ready; page={last_page!r}, links={sorted(last_links)!r}"
+    )
+PY
+then
+    cat "$browser_log_file" >&2
+    exit 1
+fi
+
+curl --fail --silent "$ATOMIC_URL/healthz" >/dev/null
+echo "Atomic is ready at ${ATOMIC_URL}; Chromium CDP is ready at ${CHROMIUM_CDP_URL}."

@@ -1,0 +1,27 @@
+{
+  "companies": [],
+  "contacts": [],
+  "contact_notes": [],
+  "deals": [],
+  "deal_notes": [],
+  "sales": [
+    {
+      "id": 0,
+      "user_id": "0",
+      "first_name": "Jane",
+      "last_name": "Doe",
+      "email": "janedoe@atomic.dev",
+      "password": "demo",
+      "administrator": true,
+      "disabled": false
+    }
+  ],
+  "tags": [],
+  "tasks": [],
+  "configuration": [
+    {
+      "id": 1,
+      "config": {}
+    }
+  ]
+}

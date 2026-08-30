@@ -78,8 +78,13 @@ pre-commit:
             glob: "frontend/{Dockerfile,package.json,pnpm-lock.yaml,pnpm-workspace.yaml}"
             run: docker build --target production --quiet frontend
           - name: Atomic demo image
-            glob: "sandbox/atomic/{Dockerfile,nginx.conf}"
-            run: docker build --platform linux/amd64 --quiet sandbox/atomic
+            glob:
+              - demo_images/atomic/Dockerfile
+              - demo_images/atomic/nginx.conf
+              - demo_images/atomic/start-demo
+              - demo_images/atomic/seed.json
+              - "demo_images/atomic/demo/**"
+            run: docker build --platform linux/amd64 --quiet demo_images/atomic
           - name: lefthook configuration
             glob: lefthook.yml
             run: corepack pnpm --dir frontend exec lefthook validate
