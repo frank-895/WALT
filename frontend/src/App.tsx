@@ -3,7 +3,6 @@ import {
 	ArrowUpRight,
 	CalendarDays,
 	Clock3,
-	Globe2,
 	RotateCcw,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -355,11 +354,9 @@ function MeetingPage() {
 			<section className="meeting-card" aria-labelledby="meeting-title">
 				<header className="meeting-summary">
 					<div className="meeting-mark" aria-hidden="true" />
-					<p className="meeting-eyebrow">Next step</p>
-					<h1 id="meeting-title">Meet the humans behind Walt.</h1>
+					<h1 id="meeting-title">Talk to the team.</h1>
 					<p className="meeting-description">
-						Choose a time for a short conversation about your workflow and what
-						Walt could do for your team.
+						Choose a time that works for you.
 					</p>
 
 					<ul className="meeting-details" aria-label="Meeting details">
@@ -370,10 +367,6 @@ function MeetingPage() {
 						<li>
 							<CalendarDays aria-hidden="true" />
 							Video call
-						</li>
-						<li>
-							<Globe2 aria-hidden="true" />
-							Europe/London
 						</li>
 					</ul>
 				</header>
@@ -417,12 +410,9 @@ function MeetingPage() {
 					</div>
 
 					<button className="meeting-submit" type="submit">
-						Book a meeting
+						Continue
 						<ArrowRight aria-hidden="true" />
 					</button>
-					<p className="meeting-note">
-						Demo interface only—nothing will be booked.
-					</p>
 				</form>
 			</section>
 		</main>
