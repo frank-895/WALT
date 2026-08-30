@@ -50,7 +50,8 @@ def test_voice_agent_exposes_only_nine_small_sequential_tools() -> None:
     assert highlight_schema["required"] == ["ref", "generation"]
     highlight_description = tools["browser_highlight"].description
     assert highlight_description is not None
-    assert "Default to not using this tool" in highlight_description
+    assert "connect the spoken" in highlight_description
+    assert "at most" not in highlight_description
     assert "sort or filter controls" in highlight_description
     for tool_name in [
         "browser_observe",
@@ -81,9 +82,12 @@ def test_sales_prompt_runs_a_concise_consultative_sales_conversation() -> None:
 
 
 def test_sales_prompt_keeps_browser_mechanics_silent() -> None:
-    assert "Browser mechanics are silent by default" in SALESPERSON_PROMPT
+    assert "BROWSER TOOL CALLS ARE SILENT" in SALESPERSON_PROMPT
+    assert "output only the tool call with no spoken content" in SALESPERSON_PROMPT
+    assert "Never combine speech and a browser tool call" in SALESPERSON_PROMPT
     assert "Never narrate observing" in SALESPERSON_PROMPT
     assert "Speak only to ask a useful question" in SALESPERSON_PROMPT
+    assert "do not announce browser actions before taking them" in SALESPERSON_PROMPT
     assert "never the interface steps" in SALESPERSON_PROMPT
 
 
@@ -113,7 +117,9 @@ def test_sales_prompt_keeps_onboarding_to_one_optional_follow_up() -> None:
         SALESPERSON_PROMPT
     )
     assert "ask at most one short follow-up" in SALESPERSON_PROMPT
-    assert "call prepare_demo immediately in the same response" in SALESPERSON_PROMPT
+    assert "call prepare_demo immediately without a spoken preamble" in (
+        SALESPERSON_PROMPT
+    )
     assert "Never add a confirmation round trip" in SALESPERSON_PROMPT
     assert "use the tool's defaults rather than keeping them in onboarding" in (
         SALESPERSON_PROMPT
@@ -132,10 +138,29 @@ def test_sales_prompt_requires_outcome_led_workflows_not_feature_pitches() -> No
     )
 
 
-def test_sales_prompt_defaults_to_no_highlight() -> None:
-    assert "Default to no highlight" in SALESPERSON_PROMPT
-    assert "at most once in the entire conversation" in SALESPERSON_PROMPT
+def test_sales_prompt_uses_highlights_as_meaningful_visual_evidence() -> None:
+    assert "Use browser_highlight when it helps the visitor" in SALESPERSON_PROMPT
+    assert "specific business result, record, status, or value" in SALESPERSON_PROMPT
+    assert "at most once in the entire conversation" not in SALESPERSON_PROMPT
     assert 'Never highlight pagination, counts such as "1 of 1,"' in (
+        SALESPERSON_PROMPT
+    )
+
+
+def test_sales_prompt_avoids_generic_post_workflow_questions() -> None:
+    assert "Do not automatically follow a workflow with a generic comparison" in (
+        SALESPERSON_PROMPT
+    )
+    assert "How does that compare with the way you handle this today?" in (
+        SALESPERSON_PROMPT
+    )
+    assert "one specific missing answer would change whether Atomic is a fit" in (
+        SALESPERSON_PROMPT
+    )
+    assert "If there is no important unknown, make the value point and stop" in (
+        SALESPERSON_PROMPT
+    )
+    assert 'Never ask "Want to see...?", "Would this be helpful?"' in (
         SALESPERSON_PROMPT
     )
 
@@ -161,7 +186,7 @@ def test_normalize_sdp_uses_browser_safe_line_endings() -> None:
 def test_realtime_model_settings_reduce_false_interruptions() -> None:
     model_settings = build_realtime_model_settings(
         Settings(
-            openai_realtime_vad_threshold=0.85,
+            openai_realtime_vad_threshold=0.9,
             openai_realtime_noise_reduction="far_field",
         )
     )
@@ -169,7 +194,7 @@ def test_realtime_model_settings_reduce_false_interruptions() -> None:
     assert model_settings["openai_input_noise_reduction"] == "far_field"
     assert model_settings["openai_turn_detection"] == {
         "type": "server_vad",
-        "threshold": 0.85,
+        "threshold": 0.9,
         "interrupt_response": True,
     }
 

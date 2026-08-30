@@ -29,7 +29,7 @@ def test_realtime_audio_defaults_favor_laptop_demo_calls(
     monkeypatch.delenv("WALT_OPENAI_REALTIME_NOISE_REDUCTION", raising=False)
     settings = Settings(_env_file=None)
 
-    assert settings.openai_realtime_vad_threshold == 0.85
+    assert settings.openai_realtime_vad_threshold == 0.9
     assert settings.openai_realtime_noise_reduction == "far_field"
 
 
