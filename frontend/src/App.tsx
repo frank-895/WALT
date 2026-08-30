@@ -1,4 +1,11 @@
-import { ArrowUpRight, RotateCcw } from "lucide-react";
+import {
+	ArrowRight,
+	ArrowUpRight,
+	CalendarDays,
+	Clock3,
+	Globe2,
+	RotateCcw,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { DesktopViewer } from "./DesktopViewer";
@@ -16,9 +23,10 @@ type ExperienceStage =
 	| "preparing"
 	| "handoff"
 	| "demo"
+	| "meeting"
 	| "error";
 
-const HANDOFF_DURATION_MS = 700;
+const HANDOFF_DURATION_MS = 500;
 
 const waltLetters = [
 	{ letter: "W", meaning: "walkthrough" },
@@ -36,11 +44,11 @@ const voiceActivityLabels: Record<VoiceActivity, string> = {
 export function App() {
 	const demoConnection = useRef<DemoConnection | null>(null);
 	const isConnecting = useRef(false);
-	const [stage, setStage] = useState<ExperienceStage>(
-		window.location.hash === "#demo" ? "connecting" : "landing",
-	);
+	const isMeetingEndState = useRef(window.location.hash === "#meeting");
+	const [stage, setStage] = useState<ExperienceStage>(initialExperienceStage);
 	const [activeLetter, setActiveLetter] = useState<number | null>(null);
 	const [assistantTranscript, setAssistantTranscript] = useState("");
+	const [assistantCaption, setAssistantCaption] = useState("");
 	const [userTranscript, setUserTranscript] = useState("");
 	const [voiceActivity, setVoiceActivity] = useState<VoiceActivity>("idle");
 	const [viewUrl, setViewUrl] = useState<string | null>(null);
@@ -49,6 +57,14 @@ export function App() {
 
 	useEffect(() => {
 		function handleLocationChange() {
+			if (isMeetingEndState.current) {
+				if (window.location.hash !== "#meeting") {
+					window.history.replaceState(null, "", "#meeting");
+				}
+				setStage("meeting");
+				return;
+			}
+
 			if (window.location.hash === "#demo") {
 				setStage((currentStage) =>
 					currentStage === "landing" ? "connecting" : currentStage,
@@ -100,6 +116,15 @@ export function App() {
 		}
 	}, []);
 	const handleDesktopReady = useCallback(() => setIsDesktopLoaded(true), []);
+	const handleMeetingCard = useCallback(() => {
+		isMeetingEndState.current = true;
+		window.history.replaceState(null, "", "#meeting");
+		setStage("meeting");
+
+		const connection = demoConnection.current;
+		demoConnection.current = null;
+		void connection?.close();
+	}, []);
 
 	const startVoiceSession = useCallback(async () => {
 		if (isConnecting.current) {
@@ -109,6 +134,7 @@ export function App() {
 		isConnecting.current = true;
 		setError(null);
 		setAssistantTranscript("");
+		setAssistantCaption("");
 		setUserTranscript("");
 		setVoiceActivity("idle");
 		setViewUrl(null);
@@ -120,8 +146,10 @@ export function App() {
 			const connection = await connectDemo({
 				onSession: handleSessionUpdate,
 				onAssistantTranscript: setAssistantTranscript,
+				onAssistantCaption: setAssistantCaption,
 				onUserTranscript: setUserTranscript,
 				onVoiceActivity: setVoiceActivity,
+				onMeetingCard: handleMeetingCard,
 				onError: (message) => {
 					setError(message);
 					setStage("error");
@@ -141,7 +169,7 @@ export function App() {
 		} finally {
 			isConnecting.current = false;
 		}
-	}, [handleSessionUpdate]);
+	}, [handleMeetingCard, handleSessionUpdate]);
 
 	useEffect(() => {
 		if (
@@ -160,11 +188,13 @@ export function App() {
 	}
 
 	const isDemo = stage === "demo";
+	const isRevealingDesktop = isDemo || (stage === "handoff" && isDesktopLoaded);
 	const isVoiceActive =
 		stage === "connecting" ||
 		stage === "conversation" ||
 		stage === "preparing" ||
 		stage === "handoff";
+	const onboardingTranscript = assistantTranscript || "Walt is getting ready…";
 
 	if (stage === "landing") {
 		return (
@@ -237,8 +267,16 @@ export function App() {
 		);
 	}
 
+	if (stage === "meeting") {
+		return <MeetingPage />;
+	}
+
 	return (
-		<main className="experience" data-stage={stage}>
+		<main
+			className="experience"
+			data-desktop-ready={isDesktopLoaded}
+			data-stage={stage}
+		>
 			<div className="desktop">
 				<DesktopViewer
 					onReady={handleDesktopReady}
@@ -247,38 +285,20 @@ export function App() {
 			</div>
 
 			<div
-				className={`guide-orb ${isDemo ? "guide-orb-demo" : "guide-orb-onboarding"}`}
+				className={`guide-orb ${isRevealingDesktop ? "guide-orb-demo" : "guide-orb-onboarding"}`}
 				data-activity={voiceActivity}
 				aria-hidden="true"
 			/>
 
 			{!isDemo && (
 				<section className="onboarding" aria-label="Voice demo onboarding">
-					<header className="onboarding-header">
-						<strong>WALT</strong>
-						<VoiceStatus
-							activity={stage === "preparing" ? "idle" : voiceActivity}
-							label={
-								stage === "preparing"
-									? "Building your demo"
-									: stage === "handoff"
-										? "Desktop ready"
-										: stage === "connecting"
-											? "Connecting"
-											: stage === "error"
-												? "Connection lost"
-												: voiceActivityLabels[voiceActivity]
-							}
-						/>
-					</header>
-
 					<div className="onboarding-step" key={stage}>
 						{stage === "connecting" && <h1>Getting Walt on the line…</h1>}
 
 						{stage === "conversation" && (
 							<>
 								<h1 className="voice-question" aria-live="polite">
-									{assistantTranscript || "Walt is getting ready…"}
+									{onboardingTranscript}
 								</h1>
 								{userTranscript && (
 									<p className="user-transcript">“{userTranscript}”</p>
@@ -312,9 +332,11 @@ export function App() {
 
 			{isDemo && (
 				<div className="narration" data-activity={voiceActivity}>
-					<span className="narration-status" aria-hidden="true" />
 					<p aria-live="polite">
-						{assistantTranscript || "Walt is ready when you are."}
+						{assistantCaption ||
+							(voiceActivity === "speaking"
+								? "…"
+								: "Walt is ready when you are.")}
 					</p>
 				</div>
 			)}
@@ -326,21 +348,113 @@ export function App() {
 	);
 }
 
-type VoiceStatusProps = {
-	activity: VoiceActivity;
-	label: string;
+function MeetingPage() {
+	return (
+		<main className="meeting-page">
+			<div className="meeting-backdrop" aria-hidden="true" />
+			<section className="meeting-card" aria-labelledby="meeting-title">
+				<header className="meeting-summary">
+					<div className="meeting-mark" aria-hidden="true" />
+					<p className="meeting-eyebrow">Next step</p>
+					<h1 id="meeting-title">Meet the humans behind Walt.</h1>
+					<p className="meeting-description">
+						Choose a time for a short conversation about your workflow and what
+						Walt could do for your team.
+					</p>
+
+					<ul className="meeting-details" aria-label="Meeting details">
+						<li>
+							<Clock3 aria-hidden="true" />
+							30 minutes
+						</li>
+						<li>
+							<CalendarDays aria-hidden="true" />
+							Video call
+						</li>
+						<li>
+							<Globe2 aria-hidden="true" />
+							Europe/London
+						</li>
+					</ul>
+				</header>
+
+				<form
+					className="meeting-form"
+					onSubmit={(event) => event.preventDefault()}
+				>
+					<fieldset>
+						<legend>Choose a day</legend>
+						<div className="meeting-options meeting-days">
+							<MeetingOption name="meeting-day" label="Mon" value="31" />
+							<MeetingOption
+								name="meeting-day"
+								label="Tue"
+								value="01"
+								defaultChecked
+							/>
+							<MeetingOption name="meeting-day" label="Wed" value="02" />
+						</div>
+					</fieldset>
+
+					<fieldset>
+						<legend>Choose a time</legend>
+						<div className="meeting-options meeting-times">
+							<MeetingOption name="meeting-time" value="10:00" />
+							<MeetingOption name="meeting-time" value="11:30" defaultChecked />
+							<MeetingOption name="meeting-time" value="14:00" />
+						</div>
+					</fieldset>
+
+					<div className="meeting-fields">
+						<label>
+							<span>Name</span>
+							<input type="text" name="name" placeholder="Your name" />
+						</label>
+						<label>
+							<span>Work email</span>
+							<input type="email" name="email" placeholder="you@company.com" />
+						</label>
+					</div>
+
+					<button className="meeting-submit" type="submit">
+						Book a meeting
+						<ArrowRight aria-hidden="true" />
+					</button>
+					<p className="meeting-note">
+						Demo interface only—nothing will be booked.
+					</p>
+				</form>
+			</section>
+		</main>
+	);
+}
+
+type MeetingOptionProps = {
+	defaultChecked?: boolean;
+	label?: string;
+	name: string;
+	value: string;
 };
 
-function VoiceStatus({ activity, label }: VoiceStatusProps) {
+function MeetingOption({
+	defaultChecked,
+	label,
+	name,
+	value,
+}: MeetingOptionProps) {
 	return (
-		<p className="voice-status" data-activity={activity}>
-			<span aria-hidden="true">
-				<i />
-				<i />
-				<i />
+		<label className="meeting-option">
+			<input
+				defaultChecked={defaultChecked}
+				name={name}
+				type="radio"
+				value={value}
+			/>
+			<span>
+				{label && <small>{label}</small>}
+				<strong>{value}</strong>
 			</span>
-			{label}
-		</p>
+		</label>
 	);
 }
 
@@ -351,4 +465,14 @@ function errorMessage(error: unknown) {
 	return error instanceof Error
 		? error.message
 		: "The voice session could not be started.";
+}
+
+function initialExperienceStage(): ExperienceStage {
+	if (window.location.hash === "#meeting") {
+		return "meeting";
+	}
+	if (window.location.hash === "#demo") {
+		return "connecting";
+	}
+	return "landing";
 }

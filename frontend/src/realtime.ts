@@ -19,6 +19,13 @@ type RealtimeEvent = {
 	type?: string;
 	delta?: string;
 	transcript?: string;
+	item_id?: string;
+	response_id?: string;
+	name?: string;
+	item?: {
+		type?: string;
+		output?: string;
+	};
 	error?: {
 		message?: string;
 	};
@@ -32,8 +39,10 @@ type VoiceAnswer = {
 type DemoCallbacks = {
 	onSession: (session: DemoSession) => void;
 	onAssistantTranscript: (text: string) => void;
+	onAssistantCaption: (text: string) => void;
 	onUserTranscript: (text: string) => void;
 	onVoiceActivity: (activity: VoiceActivity) => void;
+	onMeetingCard: () => void;
 	onError: (message: string) => void;
 };
 
@@ -42,6 +51,10 @@ export type DemoConnection = {
 };
 
 const ACTIVE_DEMO_SESSION_KEY = "walt-active-demo-session";
+const CAPTION_START_DELAY_MS = 360;
+const CAPTION_WORDS_PER_SECOND = 2.8;
+const CAPTION_LINE_WORDS = 5;
+const CAPTION_VISIBLE_LINES = 2;
 
 export async function connectDemo(
 	callbacks: DemoCallbacks,
@@ -57,6 +70,7 @@ export async function connectDemo(
 	let microphone: MediaStream | undefined;
 	let closed = false;
 	let poll: number | undefined;
+	let captionTimer: number | undefined;
 	window.addEventListener("pagehide", handlePageHide);
 
 	function handlePageHide() {
@@ -85,6 +99,9 @@ export async function connectDemo(
 		if (poll !== undefined) {
 			window.clearInterval(poll);
 		}
+		if (captionTimer !== undefined) {
+			window.clearInterval(captionTimer);
+		}
 		for (const track of microphone?.getTracks() ?? []) {
 			track.stop();
 		}
@@ -111,7 +128,57 @@ export async function connectDemo(
 
 		const events = peer.createDataChannel("oai-events");
 		let assistantTranscript = "";
-		let responseHasTranscript = false;
+		let assistantTranscriptItemId: string | undefined;
+		let assistantTranscriptResponseId: string | undefined;
+		let captionPlaybackStartedAt = 0;
+		let captionPlaybackActive = false;
+
+		function updateAssistantCaption() {
+			if (!captionPlaybackActive || !assistantTranscript) {
+				return;
+			}
+
+			const elapsedSeconds = Math.max(
+				0,
+				(performance.now() - captionPlaybackStartedAt) / 1000,
+			);
+			const spokenWordCount = Math.floor(
+				elapsedSeconds * CAPTION_WORDS_PER_SECOND,
+			);
+			callbacks.onAssistantCaption(
+				captionWindow(assistantTranscript, spokenWordCount),
+			);
+		}
+
+		function startAssistantCaption(responseId?: string) {
+			if (responseId && assistantTranscriptResponseId !== responseId) {
+				assistantTranscript = "";
+				assistantTranscriptItemId = undefined;
+			}
+			assistantTranscriptResponseId = responseId;
+			captionPlaybackActive = true;
+			captionPlaybackStartedAt = performance.now() + CAPTION_START_DELAY_MS;
+			callbacks.onAssistantCaption("");
+			callbacks.onVoiceActivity("speaking");
+			if (captionTimer === undefined) {
+				captionTimer = window.setInterval(updateAssistantCaption, 80);
+			}
+		}
+
+		function stopAssistantCaption(showCompletedTranscript: boolean) {
+			updateAssistantCaption();
+			captionPlaybackActive = false;
+			if (captionTimer !== undefined) {
+				window.clearInterval(captionTimer);
+				captionTimer = undefined;
+			}
+			if (showCompletedTranscript && assistantTranscript) {
+				callbacks.onAssistantCaption(
+					captionWindow(assistantTranscript, Number.POSITIVE_INFINITY, true),
+				);
+			}
+			callbacks.onVoiceActivity("listening");
+		}
 
 		events.addEventListener("message", (message) => {
 			let event: RealtimeEvent;
@@ -121,40 +188,62 @@ export async function connectDemo(
 				return;
 			}
 
-			if (event.type === "response.created") {
-				responseHasTranscript = false;
-				return;
-			}
-
 			if (
-				(event.type === "response.output_audio_transcript.delta" ||
-					event.type === "response.audio_transcript.delta") &&
-				event.delta
+				event.type === "response.output_audio_transcript.delta" &&
+				event.delta &&
+				event.item_id
 			) {
-				if (!responseHasTranscript) {
+				if (assistantTranscriptItemId !== event.item_id) {
 					assistantTranscript = "";
-					responseHasTranscript = true;
+					assistantTranscriptItemId = event.item_id;
 				}
+				assistantTranscriptResponseId = event.response_id;
 				assistantTranscript += event.delta;
 				callbacks.onAssistantTranscript(assistantTranscript);
-				callbacks.onVoiceActivity("speaking");
+				updateAssistantCaption();
 				return;
 			}
 
 			if (
-				(event.type === "response.output_audio_transcript.done" ||
-					event.type === "response.audio_transcript.done") &&
-				event.transcript
+				event.type === "response.output_audio_transcript.done" &&
+				event.transcript &&
+				event.item_id
 			) {
+				assistantTranscriptItemId = event.item_id;
+				assistantTranscriptResponseId = event.response_id;
 				assistantTranscript = event.transcript;
 				callbacks.onAssistantTranscript(assistantTranscript);
-				callbacks.onVoiceActivity("listening");
+				updateAssistantCaption();
+				return;
+			}
+
+			if (event.type === "output_audio_buffer.started") {
+				startAssistantCaption(event.response_id);
+				return;
+			}
+
+			if (event.type === "output_audio_buffer.stopped") {
+				stopAssistantCaption(true);
+				return;
+			}
+
+			if (event.type === "output_audio_buffer.cleared") {
+				stopAssistantCaption(false);
+				return;
+			}
+
+			if (
+				(event.type === "response.function_call_arguments.done" &&
+					event.name === "show_meeting_card") ||
+				isMeetingCardOutput(event)
+			) {
+				callbacks.onMeetingCard();
 				return;
 			}
 
 			if (event.type === "input_audio_buffer.speech_started") {
+				stopAssistantCaption(false);
 				callbacks.onUserTranscript("");
-				callbacks.onVoiceActivity("listening");
 				return;
 			}
 
@@ -226,6 +315,70 @@ export async function connectDemo(
 		await close();
 		throw error;
 	}
+}
+
+function captionWindow(
+	transcript: string,
+	spokenWordCount = Number.POSITIVE_INFINITY,
+	includePartialLine = false,
+) {
+	const normalizedTranscript = transcript.trim();
+	if (!normalizedTranscript) {
+		return "";
+	}
+
+	const words = normalizedTranscript.split(/\s+/);
+	const spokenWords = words.slice(0, spokenWordCount);
+	const lines: string[] = [];
+	let line: string[] = [];
+
+	for (const word of spokenWords) {
+		line.push(word);
+		if (line.length >= CAPTION_LINE_WORDS || endsCaptionPhrase(word)) {
+			lines.push(line.join(" "));
+			line = [];
+		}
+	}
+	if (includePartialLine && line.length > 0) {
+		lines.push(line.join(" "));
+	}
+
+	return lines.slice(-CAPTION_VISIBLE_LINES).join("\n");
+}
+
+function endsCaptionPhrase(word: string) {
+	return /[.!?;:]["'’”)]?$/.test(word);
+}
+
+function isMeetingCardOutput(event: RealtimeEvent) {
+	if (
+		event.type !== "conversation.item.created" ||
+		event.item?.type !== "function_call_output" ||
+		!event.item.output
+	) {
+		return false;
+	}
+
+	try {
+		return containsMeetingCardSignal(JSON.parse(event.item.output));
+	} catch {
+		return false;
+	}
+}
+
+function containsMeetingCardSignal(value: unknown): boolean {
+	if (Array.isArray(value)) {
+		return value.some(containsMeetingCardSignal);
+	}
+	if (!value || typeof value !== "object") {
+		return false;
+	}
+
+	const record = value as Record<string, unknown>;
+	if (record.event === "show_meeting_card" && record.visible === true) {
+		return true;
+	}
+	return Object.values(record).some(containsMeetingCardSignal);
 }
 
 async function deletePreviousDemoSession() {
