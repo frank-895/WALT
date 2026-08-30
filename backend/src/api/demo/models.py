@@ -84,6 +84,14 @@ class FillAction(StrictModel):
     value: FillValue
 
 
+class HighlightAction(StrictModel):
+    """Visually emphasize one target from the latest observation."""
+
+    action: Literal["highlight"]
+    ref: Reference
+    generation: int = Field(ge=1)
+
+
 class KeyAction(StrictModel):
     """Press one explicitly allowed keyboard key."""
 
@@ -106,7 +114,13 @@ class WaitAction(StrictModel):
 
 
 BrowserAction = Annotated[
-    ObserveAction | ClickAction | FillAction | KeyAction | ScrollAction | WaitAction,
+    ObserveAction
+    | ClickAction
+    | FillAction
+    | HighlightAction
+    | KeyAction
+    | ScrollAction
+    | WaitAction,
     Field(discriminator="action"),
 ]
 
@@ -121,6 +135,14 @@ class BrowserControl(StrictModel):
     href: str | None = None
 
 
+class BrowserHighlightTarget(StrictModel):
+    """Visible named content that Walt can emphasize without interacting with it."""
+
+    ref: str
+    role: str
+    name: str
+
+
 class BrowserActionResult(StrictModel):
     """Fresh browser state and screenshot returned after every action."""
 
@@ -129,6 +151,7 @@ class BrowserActionResult(StrictModel):
     route: str
     title: str
     controls: list[BrowserControl]
+    highlight_targets: list[BrowserHighlightTarget] = Field(default_factory=list)
     screenshot: str
 
 

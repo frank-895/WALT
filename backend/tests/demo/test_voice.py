@@ -5,11 +5,17 @@ from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.realtime import WebRTCSession
 
 from api.demo.models import VoiceAnswer
-from api.demo.voice import PydanticVoiceRuntime, VoiceCall, agent, normalize_sdp
+from api.demo.voice import (
+    SALESPERSON_PROMPT,
+    PydanticVoiceRuntime,
+    VoiceCall,
+    agent,
+    normalize_sdp,
+)
 from api.settings import Settings
 
 
-def test_voice_agent_exposes_only_seven_small_sequential_tools() -> None:
+def test_voice_agent_exposes_only_eight_small_sequential_tools() -> None:
     tools = agent._function_toolset.tools
 
     assert list(tools) == [
@@ -17,6 +23,7 @@ def test_voice_agent_exposes_only_seven_small_sequential_tools() -> None:
         "browser_observe",
         "browser_click",
         "browser_fill",
+        "browser_highlight",
         "browser_key",
         "browser_scroll",
         "browser_wait",
@@ -36,6 +43,23 @@ def test_voice_agent_exposes_only_seven_small_sequential_tools() -> None:
         "251-500",
         "500+",
     ]
+    highlight_schema = tools["browser_highlight"].function_schema.json_schema
+    assert highlight_schema["required"] == ["ref", "generation"]
+
+
+def test_sales_prompt_qualifies_fit_and_uses_highlights_as_evidence() -> None:
+    opening_instruction = (
+        'Start immediately by asking exactly: "Tell me briefly about your company."'
+    )
+
+    assert opening_instruction in SALESPERSON_PROMPT
+    assert (
+        "Help the visitor decide whether Atomic is a strong fit" in SALESPERSON_PROMPT
+    )
+    assert "Do not force a positive recommendation" in SALESPERSON_PROMPT
+    assert "If Atomic is not a good fit, say that clearly" in SALESPERSON_PROMPT
+    assert "Do not highlight every click or control" in SALESPERSON_PROMPT
+    assert "Never invent features" in SALESPERSON_PROMPT
 
 
 def test_normalize_sdp_uses_browser_safe_line_endings() -> None:

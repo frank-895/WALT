@@ -10,8 +10,10 @@ from api.demo.models import (
     BrowserAction,
     BrowserActionResult,
     BrowserControl,
+    BrowserHighlightTarget,
     ClickAction,
     FillAction,
+    HighlightAction,
 )
 
 INTERACTIVE_ROLES = {
@@ -92,6 +94,17 @@ class RawControl(BaseModel):
     href: str | None = None
 
 
+class RawHighlightTarget(BaseModel):
+    """One presentational accessibility target returned by the adapter."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    node_id: int
+    role: str
+    name: str = ""
+    visible: bool = True
+
+
 class RawBrowserState(BaseModel):
     """Browser state returned by the fixed JSON adapter."""
 
@@ -100,10 +113,11 @@ class RawBrowserState(BaseModel):
     url: str
     title: str = ""
     controls: list[RawControl] = Field(default_factory=list)
+    highlight_targets: list[RawHighlightTarget] = Field(default_factory=list)
 
 
 class BrowserController:
-    """Serialize six safe Browser Use operations against one Chromium session."""
+    """Serialize safe Browser Use operations against one Chromium session."""
 
     def __init__(
         self,
@@ -130,6 +144,7 @@ class BrowserController:
         self._lock = asyncio.Lock()
         self._generation = 0
         self._nodes: dict[str, int] = {}
+        self._highlight_nodes: dict[str, int] = {}
 
     async def execute(self, action: BrowserAction) -> BrowserActionResult:
         """Execute one allowed action and return a fully refreshed observation.
@@ -157,6 +172,17 @@ class BrowserController:
                 request["node_id"] = self._nodes[action.ref]
                 request.pop("ref")
                 request.pop("generation")
+            elif isinstance(action, HighlightAction):
+                if (
+                    action.generation != self._generation
+                    or action.ref not in self._highlight_nodes
+                ):
+                    raise StaleBrowserReferenceError(
+                        "Refresh browser targets and try again"
+                    )
+                request["node_id"] = self._highlight_nodes[action.ref]
+                request.pop("ref")
+                request.pop("generation")
             encoded_request = base64.b64encode(
                 json.dumps(request, separators=(",", ":")).encode()
             ).decode()
@@ -177,8 +203,12 @@ class BrowserController:
                 ) from error
             self._enforce_atomic_origin(state.url)
             self._generation += 1
-            controls, nodes = self._compact_controls(state.controls)
+            controls, nodes, control_targets = self._compact_controls(state.controls)
+            highlight_targets, presentational_targets = self._compact_highlights(
+                state.highlight_targets
+            )
             self._nodes = nodes
+            self._highlight_nodes = control_targets | presentational_targets
             screenshot_result = await self._sandbox.take_screenshot(
                 self._screenshot_quality, self._screenshot_scale
             )
@@ -194,22 +224,28 @@ class BrowserController:
                 route=route,
                 title=state.title,
                 controls=controls,
+                highlight_targets=highlight_targets,
                 screenshot=screenshot_result.screenshot,
             )
 
     def _compact_controls(
         self, controls: list[RawControl]
-    ) -> tuple[list[BrowserControl], dict[str, int]]:
+    ) -> tuple[
+        list[BrowserControl],
+        dict[str, int],
+        dict[str, int],
+    ]:
         """Filter the AX tree and assign short-lived references.
 
         Args:
             controls: Raw accessibility controls from Browser Use.
 
         Returns:
-            Compact public controls and their private node mapping.
+            Compact controls, interactive nodes, and all highlightable controls.
         """
         compact: list[BrowserControl] = []
         nodes: dict[str, int] = {}
+        highlight_nodes: dict[str, int] = {}
         for control in controls:
             if (
                 not control.visible
@@ -232,8 +268,45 @@ class BrowserController:
                     href=control.href,
                 )
             )
+            highlight_nodes[ref] = control.node_id
             if external_href is None and not control.disabled:
                 nodes[ref] = control.node_id
+        return compact, nodes, highlight_nodes
+
+    def _compact_highlights(
+        self, targets: list[RawHighlightTarget]
+    ) -> tuple[
+        list[BrowserHighlightTarget],
+        dict[str, int],
+    ]:
+        """Assign refs to visible named presentational targets.
+
+        Args:
+            targets: Raw non-interactive accessibility targets.
+
+        Returns:
+            Compact public targets and their private node mapping.
+        """
+        compact: list[BrowserHighlightTarget] = []
+        nodes: dict[str, int] = {}
+        seen: set[tuple[int, str]] = set()
+        for target in targets:
+            name = target.name.strip()
+            identity = (target.node_id, name)
+            if not target.visible or not name or identity in seen:
+                continue
+            seen.add(identity)
+            ref = f"h{len(compact) + 1}"
+            compact.append(
+                BrowserHighlightTarget(
+                    ref=ref,
+                    role=target.role,
+                    name=name[:160],
+                )
+            )
+            nodes[ref] = target.node_id
+            if len(compact) == 80:
+                break
         return compact, nodes
 
     def _enforce_atomic_origin(self, url: str) -> None:

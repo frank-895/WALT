@@ -6,7 +6,7 @@ from dataclasses import dataclass
 import pytest
 
 from api.demo.browser import BrowserController, StaleBrowserReferenceError
-from api.demo.models import ClickAction, ObserveAction
+from api.demo.models import ClickAction, HighlightAction, ObserveAction
 
 
 @dataclass
@@ -39,6 +39,10 @@ class FakeBrowserSandbox:
                 },
                 {"node_id": 43, "role": "generic", "name": "Ignored"},
             ],
+            "highlight_targets": [
+                {"node_id": 51, "role": "heading", "name": "Sales pipeline"},
+                {"node_id": 52, "role": "StaticText", "name": "£35,000"},
+            ],
         }
         return ProcessResponse(exit_code=0, result=json.dumps(state))
 
@@ -63,6 +67,29 @@ def test_controller_refreshes_refs_and_disables_external_links() -> None:
     assert clicked.generation == 2
     assert clicked.route == "/#/deals"
     assert sandbox.requests[1] == {"action": "click", "node_id": 41}
+
+
+def test_controller_highlights_presentational_and_interactive_targets() -> None:
+    sandbox = FakeBrowserSandbox()
+    controller = BrowserController(sandbox, "http://127.0.0.1:8080", 15, 70, 0.75)
+
+    observed = asyncio.run(controller.execute(ObserveAction(action="observe")))
+    highlighted_content = asyncio.run(
+        controller.execute(HighlightAction(action="highlight", ref="h2", generation=1))
+    )
+    asyncio.run(
+        controller.execute(HighlightAction(action="highlight", ref="b1", generation=2))
+    )
+
+    assert [
+        (target.ref, target.role, target.name) for target in observed.highlight_targets
+    ] == [
+        ("h1", "heading", "Sales pipeline"),
+        ("h2", "StaticText", "£35,000"),
+    ]
+    assert highlighted_content.generation == 2
+    assert sandbox.requests[1] == {"action": "highlight", "node_id": 52}
+    assert sandbox.requests[2] == {"action": "highlight", "node_id": 41}
 
 
 def test_controller_rejects_stale_refs_before_running_adapter() -> None:

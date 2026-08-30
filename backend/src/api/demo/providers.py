@@ -60,7 +60,7 @@ class SandboxProvider(Protocol):
 
 
 class DaytonaBrowserSandbox:
-    """Expose only fixed runner and screenshot operations to BrowserController."""
+    """Expose fixed browser and screenshot operations."""
 
     def __init__(self, sandbox: AsyncSandbox) -> None:
         """Wrap a Daytona sandbox.
@@ -230,7 +230,7 @@ class DaytonaSandboxProvider:
             sandbox: Ready Daytona sandbox.
 
         Returns:
-            A serialized six-action browser controller.
+            A serialized safe browser controller.
         """
         return BrowserController(
             DaytonaBrowserSandbox(sandbox),
