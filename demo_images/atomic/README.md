@@ -20,7 +20,7 @@ Use an immutable version for every published build. Daytona snapshots do not acc
 
 ```sh
 docker login
-docker buildx build --platform linux/amd64 --tag frank895/walt-atomic-demo:1.0.0 --provenance=mode=max --sbom=true --push demo_images/atomic
+docker buildx build --platform linux/amd64 --tag frank895/walt-atomic-demo:1.0.1 --provenance=mode=max --sbom=true --push demo_images/atomic
 ```
 
 ## Create the Daytona snapshot
@@ -28,7 +28,7 @@ docker buildx build --platform linux/amd64 --tag frank895/walt-atomic-demo:1.0.0
 Create the snapshot once from the versioned Docker Hub image. Customer sandboxes must use the snapshot rather than the Docker Hub image directly.
 
 ```sh
-daytona snapshot create atomic-realtime-demo-v1 --image docker.io/frank895/walt-atomic-demo:1.0.0 --cpu 2 --memory 4
+daytona snapshot create atomic-realtime-demo-v1 --image docker.io/frank895/walt-atomic-demo:1.0.1 --cpu 2 --memory 4
 ```
 
 The snapshot should use the default `daytona` user and the resolution baked into the image. Do not add per-customer environment variables, volumes, secrets, or data to the snapshot.
