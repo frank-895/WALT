@@ -287,7 +287,9 @@ export function App() {
 				className={`guide-orb ${isRevealingDesktop ? "guide-orb-demo" : "guide-orb-onboarding"}`}
 				data-activity={voiceActivity}
 				aria-hidden="true"
-			/>
+			>
+				<span className="guide-orb-core" />
+			</div>
 
 			{!isDemo && (
 				<section className="onboarding" aria-label="Voice demo onboarding">
