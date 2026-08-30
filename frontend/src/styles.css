@@ -1040,11 +1040,13 @@ button {
 	.experience[data-stage="demo"] .narration {
 		justify-self: stretch;
 		width: 100%;
+		padding-left: 88px;
+		transform: translateY(-16px);
 	}
 
 	.experience[data-stage="demo"] .guide-orb {
 		left: max(clamp(32px, 4vw, 80px), calc(50% - 712px));
-		bottom: 19px;
+		bottom: 35px;
 	}
 }
 
