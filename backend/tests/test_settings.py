@@ -3,17 +3,15 @@ import pytest
 from api.settings import Settings
 
 
-def test_ai_settings_are_loaded_from_environment(
+def test_demo_provider_settings_are_loaded_from_environment(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setenv("WALT_AI_MODEL", "openai:example-model")
-    monkeypatch.setenv("WALT_AI_TEMPERATURE", "0.25")
-    monkeypatch.setenv("WALT_AI_MAX_TOKENS", "512")
+    monkeypatch.setenv("WALT_OPENAI_REALTIME_MODEL", "gpt-realtime-test")
+    monkeypatch.setenv("WALT_DAYTONA_SNAPSHOT", "atomic-test")
+    monkeypatch.setenv("WALT_DEMO_TTL_SECONDS", "600")
 
     settings = Settings()
 
-    assert settings.ai_model == "openai:example-model"
-    assert settings.ai_model_settings == {
-        "temperature": 0.25,
-        "max_tokens": 512,
-    }
+    assert settings.openai_realtime_model == "gpt-realtime-test"
+    assert settings.daytona_snapshot == "atomic-test"
+    assert settings.demo_ttl_seconds == 600

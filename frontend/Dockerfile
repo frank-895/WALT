@@ -13,6 +13,9 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
 
 FROM base AS development
 
+ENV CI=true \
+    PNPM_CONFIG_IGNORE_SCRIPTS=true
+
 COPY . .
 EXPOSE 5173
 CMD ["pnpm", "dev", "--host", "0.0.0.0", "--port", "5173"]

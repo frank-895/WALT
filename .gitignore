@@ -211,6 +211,7 @@ tempCodeRunnerFile.py
 
 # Node / React / Vite
 node_modules/
+.pnpm-store/
 *.tsbuildinfo
 frontend/dist/
 frontend/coverage/
