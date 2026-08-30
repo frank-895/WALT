@@ -10,6 +10,7 @@ from api.demo.voice import (
     PydanticVoiceRuntime,
     VoiceCall,
     agent,
+    build_realtime_model_settings,
     normalize_sdp,
 )
 from api.settings import Settings
@@ -47,19 +48,21 @@ def test_voice_agent_exposes_only_eight_small_sequential_tools() -> None:
     assert highlight_schema["required"] == ["ref", "generation"]
 
 
-def test_sales_prompt_qualifies_fit_and_uses_highlights_as_evidence() -> None:
-    opening_instruction = (
-        'Start immediately by asking exactly: "Tell me briefly about your company."'
-    )
-
-    assert opening_instruction in SALESPERSON_PROMPT
+def test_sales_prompt_uses_flexible_single_question_onboarding() -> None:
     assert (
-        "Help the visitor decide whether Atomic is a strong fit" in SALESPERSON_PROMPT
+        "Open with: \"Hi, I'm Walt. I'll guide your Atomic demo." in SALESPERSON_PROMPT
     )
-    assert "Do not force a positive recommendation" in SALESPERSON_PROMPT
-    assert "If Atomic is not a good fit, say that clearly" in SALESPERSON_PROMPT
-    assert "Do not highlight every click or control" in SALESPERSON_PROMPT
-    assert "Never invent features" in SALESPERSON_PROMPT
+    assert "Ask one broad onboarding question, not a form" in SALESPERSON_PROMPT
+    assert "Ask at most one short follow-up" in SALESPERSON_PROMPT
+    assert "If they ask for a generic demo, skip questions" in SALESPERSON_PROMPT
+    assert "Omit unknown arguments and let the tool use fictional defaults" in (
+        SALESPERSON_PROMPT
+    )
+    assert "demonstrate conversationally instead of following a fixed tour" in (
+        SALESPERSON_PROMPT
+    )
+    assert "This is the entire onboarding" not in SALESPERSON_PROMPT
+    assert "Do not add a welcome" not in SALESPERSON_PROMPT
 
 
 def test_normalize_sdp_uses_browser_safe_line_endings() -> None:
@@ -67,6 +70,22 @@ def test_normalize_sdp_uses_browser_safe_line_endings() -> None:
 
     assert normalized == ("v=0\r\no=- 1 1 IN IP4 127.0.0.1\r\na=ice-pwd:valid\r\n")
     assert VoiceAnswer(sdp=normalized, call_id="call-1").sdp.endswith("\r\n")
+
+
+def test_realtime_model_settings_reduce_false_interruptions() -> None:
+    model_settings = build_realtime_model_settings(
+        Settings(
+            openai_realtime_vad_threshold=0.75,
+            openai_realtime_noise_reduction="near_field",
+        )
+    )
+
+    assert model_settings["openai_input_noise_reduction"] == "near_field"
+    assert model_settings["openai_turn_detection"] == {
+        "type": "server_vad",
+        "threshold": 0.75,
+        "interrupt_response": True,
+    }
 
 
 def test_close_session_hangs_up_openai_call() -> None:

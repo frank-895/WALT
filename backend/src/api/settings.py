@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_realtime_model: str = "gpt-realtime-2.1"
     openai_realtime_voice: str = "marin"
+    openai_realtime_vad_threshold: float = Field(default=0.7, ge=0, le=1)
+    openai_realtime_noise_reduction: Literal["near_field", "far_field"] = "far_field"
     daytona_api_key: SecretStr | None = None
     daytona_api_url: str | None = None
     daytona_snapshot: str | None = None

@@ -278,7 +278,7 @@ export function App() {
 						{stage === "conversation" && (
 							<>
 								<h1 className="voice-question" aria-live="polite">
-									{assistantTranscript || "Tell me briefly about your company."}
+									{assistantTranscript || "Walt is getting ready…"}
 								</h1>
 								{userTranscript && (
 									<p className="user-transcript">“{userTranscript}”</p>
