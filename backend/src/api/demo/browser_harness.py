@@ -187,6 +187,37 @@ def observe():
     }
 
 
+def state_signature(state):
+    return json.dumps(state, sort_keys=True, separators=(",", ":"))
+
+
+def observe_settled(minimum_milliseconds):
+    started = time.monotonic()
+    deadline = started + 2.5
+    state = observe()
+    signature = state_signature(state)
+    unchanged_since = time.monotonic()
+
+    while time.monotonic() < deadline:
+        time.sleep(0.1)
+        candidate = observe()
+        candidate_signature = state_signature(candidate)
+        now = time.monotonic()
+        if candidate_signature != signature:
+            signature = candidate_signature
+            unchanged_since = now
+        state = candidate
+        if (
+            (now - started) * 1000 >= minimum_milliseconds
+            and now - unchanged_since >= 0.3
+        ):
+            state["state_stable"] = True
+            return state
+
+    state["state_stable"] = False
+    return state
+
+
 request = json.loads(
     base64.b64decode(os.environ["WALT_BROWSER_REQUEST"]).decode("utf-8")
 )
@@ -212,10 +243,13 @@ elif action == "scroll":
 elif action == "wait":
     time.sleep(request["milliseconds"] / 1000)
 
-if action not in {"observe", "wait"}:
-    time.sleep(0.15)
+if action in {"observe", "highlight", "wait"}:
+    state = observe()
+    state["state_stable"] = True
+else:
+    state = observe_settled(request.get("settle_minimum_milliseconds", 350))
 
-print(json.dumps(observe(), separators=(",", ":")))
+print(json.dumps(state, separators=(",", ":")))
 PY"""
 
 RELOAD_DEMO_COMMAND = r"""BU_CDP_URL="$CHROMIUM_CDP_URL" browser-use <<'PY'

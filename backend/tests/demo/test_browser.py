@@ -66,7 +66,12 @@ def test_controller_refreshes_refs_and_disables_external_links() -> None:
     ]
     assert clicked.generation == 2
     assert clicked.route == "/#/deals"
-    assert sandbox.requests[1] == {"action": "click", "node_id": 41}
+    assert sandbox.requests[1] == {
+        "action": "click",
+        "node_id": 41,
+        "settle_minimum_milliseconds": 900,
+    }
+    assert clicked.state_stable is True
 
 
 def test_controller_highlights_presentational_and_interactive_targets() -> None:

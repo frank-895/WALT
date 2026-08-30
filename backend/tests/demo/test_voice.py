@@ -50,7 +50,8 @@ def test_voice_agent_exposes_only_nine_small_sequential_tools() -> None:
     assert highlight_schema["required"] == ["ref", "generation"]
     highlight_description = tools["browser_highlight"].description
     assert highlight_description is not None
-    assert "Default to not using this tool" in highlight_description
+    assert "directly demonstrates a completed" in highlight_description
+    assert "at most" not in highlight_description
     assert "sort or filter controls" in highlight_description
     for tool_name in [
         "browser_observe",
@@ -132,12 +133,36 @@ def test_sales_prompt_requires_outcome_led_workflows_not_feature_pitches() -> No
     )
 
 
-def test_sales_prompt_defaults_to_no_highlight() -> None:
-    assert "Default to no highlight" in SALESPERSON_PROMPT
-    assert "at most once in the entire conversation" in SALESPERSON_PROMPT
+def test_sales_prompt_uses_highlights_only_as_meaningful_visual_evidence() -> None:
+    assert "Use browser_highlight as a visual sales aid" in SALESPERSON_PROMPT
+    assert "directly demonstrate a completed workflow result" in SALESPERSON_PROMPT
+    assert "at most once in the entire conversation" not in SALESPERSON_PROMPT
     assert 'Never highlight pagination, counts such as "1 of 1,"' in (
         SALESPERSON_PROMPT
     )
+
+
+def test_sales_prompt_asks_only_discovery_questions_that_advance_the_sale() -> None:
+    assert "Do not automatically follow a workflow with a generic comparison" in (
+        SALESPERSON_PROMPT
+    )
+    assert "How does that compare with the way you handle this today?" in (
+        SALESPERSON_PROMPT
+    )
+    assert "root cause, frequency, people affected, measurable consequence" in (
+        SALESPERSON_PROMPT
+    )
+    assert "If there is no important unknown, make the value point and stop" in (
+        SALESPERSON_PROMPT
+    )
+
+
+def test_sales_prompt_waits_for_settled_browser_results_before_speaking() -> None:
+    assert "make the tool call without spoken text in the same response" in (
+        SALESPERSON_PROMPT
+    )
+    assert "If state_stable is false" in SALESPERSON_PROMPT
+    assert "A disabled Save button after submission" in SALESPERSON_PROMPT
 
 
 def test_sales_prompt_only_offers_a_meeting_after_expressed_interest() -> None:

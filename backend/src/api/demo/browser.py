@@ -32,6 +32,19 @@ INTERACTIVE_ROLES = {
     "tab",
     "textbox",
 }
+MUTATING_CONTROL_NAME_PARTS = (
+    "add",
+    "archive",
+    "complete",
+    "confirm",
+    "create",
+    "delete",
+    "remove",
+    "restore",
+    "save",
+    "submit",
+    "update",
+)
 
 
 class BrowserActionError(Exception):
@@ -114,6 +127,7 @@ class RawBrowserState(BaseModel):
     title: str = ""
     controls: list[RawControl] = Field(default_factory=list)
     highlight_targets: list[RawHighlightTarget] = Field(default_factory=list)
+    state_stable: bool = True
 
 
 class BrowserController:
@@ -144,6 +158,7 @@ class BrowserController:
         self._lock = asyncio.Lock()
         self._generation = 0
         self._nodes: dict[str, int] = {}
+        self._control_names: dict[str, str] = {}
         self._highlight_nodes: dict[str, int] = {}
 
     async def execute(self, action: BrowserAction) -> BrowserActionResult:
@@ -170,6 +185,12 @@ class BrowserController:
                         "Refresh browser controls and try again"
                     )
                 request["node_id"] = self._nodes[action.ref]
+                if isinstance(action, ClickAction):
+                    request["settle_minimum_milliseconds"] = (
+                        _settle_minimum_milliseconds(
+                            self._control_names.get(action.ref, "")
+                        )
+                    )
                 request.pop("ref")
                 request.pop("generation")
             elif isinstance(action, HighlightAction):
@@ -203,11 +224,14 @@ class BrowserController:
                 ) from error
             self._enforce_atomic_origin(state.url)
             self._generation += 1
-            controls, nodes, control_targets = self._compact_controls(state.controls)
+            controls, nodes, control_targets, control_names = self._compact_controls(
+                state.controls
+            )
             highlight_targets, presentational_targets = self._compact_highlights(
                 state.highlight_targets
             )
             self._nodes = nodes
+            self._control_names = control_names
             self._highlight_nodes = control_targets | presentational_targets
             screenshot_result = await self._sandbox.take_screenshot(
                 self._screenshot_quality, self._screenshot_scale
@@ -225,6 +249,7 @@ class BrowserController:
                 title=state.title,
                 controls=controls,
                 highlight_targets=highlight_targets,
+                state_stable=state.state_stable,
                 screenshot=screenshot_result.screenshot,
             )
 
@@ -234,6 +259,7 @@ class BrowserController:
         list[BrowserControl],
         dict[str, int],
         dict[str, int],
+        dict[str, str],
     ]:
         """Filter the AX tree and assign short-lived references.
 
@@ -241,11 +267,12 @@ class BrowserController:
             controls: Raw accessibility controls from Browser Use.
 
         Returns:
-            Compact controls, interactive nodes, and all highlightable controls.
+            Compact controls, interactive nodes, highlightable controls, and names.
         """
         compact: list[BrowserControl] = []
         nodes: dict[str, int] = {}
         highlight_nodes: dict[str, int] = {}
+        control_names: dict[str, str] = {}
         for control in controls:
             if (
                 not control.visible
@@ -269,9 +296,10 @@ class BrowserController:
                 )
             )
             highlight_nodes[ref] = control.node_id
+            control_names[ref] = control.name
             if external_href is None and not control.disabled:
                 nodes[ref] = control.node_id
-        return compact, nodes, highlight_nodes
+        return compact, nodes, highlight_nodes, control_names
 
     def _compact_highlights(
         self, targets: list[RawHighlightTarget]
@@ -335,3 +363,18 @@ class BrowserController:
         expected = urlsplit(self._atomic_origin)
         actual = urlsplit(url)
         return actual.scheme == expected.scheme and actual.netloc == expected.netloc
+
+
+def _settle_minimum_milliseconds(control_name: str) -> int:
+    """Return a longer settling floor for controls likely to persist data.
+
+    Args:
+        control_name: Accessible name of the clicked control.
+
+    Returns:
+        Minimum observation time after the click.
+    """
+    normalized_name = control_name.casefold()
+    if any(part in normalized_name for part in MUTATING_CONTROL_NAME_PARTS):
+        return 900
+    return 350
