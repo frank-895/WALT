@@ -223,6 +223,9 @@ frontend/.vite/
 lefthook-local.yml
 lefthook-local.yaml
 
+# Vercel local project links
+.vercel/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
