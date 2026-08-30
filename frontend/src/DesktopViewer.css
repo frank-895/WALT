@@ -1,0 +1,17 @@
+.desktop-viewer {
+	position: relative;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	background: #000;
+	pointer-events: none;
+}
+
+.desktop-viewer-status {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	color: rgba(255, 255, 255, 0.72);
+	font-size: 14px;
+	place-items: center;
+}
