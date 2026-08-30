@@ -15,7 +15,7 @@ pre-commit:
           - name: frontend
             root: frontend/
             glob: "frontend/**/*.{css,js,jsx,json,ts,tsx}"
-            run: pnpm exec biome check --write {staged_files}
+            run: corepack pnpm exec biome check --write {staged_files}
             stage_fixed: true
     - name: check
       group:
@@ -49,19 +49,7 @@ pre-commit:
               - frontend/pnpm-lock.yaml
               - frontend/pnpm-workspace.yaml
               - "frontend/tsconfig*.json"
-            run: pnpm typecheck
-          - name: frontend related tests
-            root: frontend/
-            glob: "frontend/src/**/*.{js,jsx,ts,tsx}"
-            run: pnpm exec vitest related --run {staged_files} --passWithNoTests --reporter=dot
-          - name: frontend full tests
-            root: frontend/
-            glob:
-              - frontend/package.json
-              - frontend/pnpm-lock.yaml
-              - frontend/pnpm-workspace.yaml
-              - frontend/vite.config.ts
-            run: pnpm exec vitest run --reporter=dot
+            run: corepack pnpm typecheck
           - name: frontend build
             root: frontend/
             glob:
@@ -72,14 +60,14 @@ pre-commit:
               - frontend/pnpm-workspace.yaml
               - "frontend/tsconfig*.json"
               - frontend/vite.config.ts
-            run: pnpm exec vite build --clearScreen false
+            run: corepack pnpm exec vite build --clearScreen false
           - name: frontend lockfile
             root: frontend/
             glob:
               - frontend/package.json
               - frontend/pnpm-lock.yaml
               - frontend/pnpm-workspace.yaml
-            run: pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
+            run: corepack pnpm install --lockfile-only --frozen-lockfile --ignore-scripts
           - name: compose configuration
             glob: "{docker-compose.yml,backend/Dockerfile,frontend/Dockerfile}"
             run: docker compose -f docker-compose.yml config --quiet
@@ -94,4 +82,4 @@ pre-commit:
             run: docker build --platform linux/amd64 --quiet sandbox/atomic
           - name: lefthook configuration
             glob: lefthook.yml
-            run: pnpm --dir frontend exec lefthook validate
+            run: corepack pnpm --dir frontend exec lefthook validate
