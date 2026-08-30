@@ -12,11 +12,12 @@ from api.demo.voice import (
     agent,
     build_realtime_model_settings,
     normalize_sdp,
+    show_meeting_card,
 )
 from api.settings import Settings
 
 
-def test_voice_agent_exposes_only_eight_small_sequential_tools() -> None:
+def test_voice_agent_exposes_only_nine_small_sequential_tools() -> None:
     tools = agent._function_toolset.tools
 
     assert list(tools) == [
@@ -28,6 +29,7 @@ def test_voice_agent_exposes_only_eight_small_sequential_tools() -> None:
         "browser_key",
         "browser_scroll",
         "browser_wait",
+        "show_meeting_card",
     ]
     assert all(tool.sequential for tool in tools.values())
     assert tools["prepare_demo"].max_retries == 2
@@ -46,23 +48,107 @@ def test_voice_agent_exposes_only_eight_small_sequential_tools() -> None:
     ]
     highlight_schema = tools["browser_highlight"].function_schema.json_schema
     assert highlight_schema["required"] == ["ref", "generation"]
+    highlight_description = tools["browser_highlight"].description
+    assert highlight_description is not None
+    assert "Default to not using this tool" in highlight_description
+    assert "sort or filter controls" in highlight_description
+    for tool_name in [
+        "browser_observe",
+        "browser_click",
+        "browser_fill",
+        "browser_highlight",
+        "browser_key",
+        "browser_scroll",
+        "browser_wait",
+    ]:
+        description = tools[tool_name].description
+        assert description is not None
+        assert "silently" in description.lower()
+    meeting_schema = tools["show_meeting_card"].function_schema.json_schema
+    assert meeting_schema["properties"] == {}
 
 
-def test_sales_prompt_uses_flexible_single_question_onboarding() -> None:
-    assert (
-        "Open with: \"Hi, I'm Walt. I'll guide your Atomic demo." in SALESPERSON_PROMPT
-    )
-    assert "Ask one broad onboarding question, not a form" in SALESPERSON_PROMPT
-    assert "Ask at most one short follow-up" in SALESPERSON_PROMPT
-    assert "If they ask for a generic demo, skip questions" in SALESPERSON_PROMPT
-    assert "Omit unknown arguments and let the tool use fictional defaults" in (
+def test_sales_prompt_runs_a_concise_consultative_sales_conversation() -> None:
+    assert "confident, consultative salesperson" in SALESPERSON_PROMPT
+    assert "Speak in one or two short sentences per turn" in SALESPERSON_PROMPT
+    assert "ASK ONE QUESTION AT A TIME" in SALESPERSON_PROMPT
+    assert "never pitch a feature before understanding why it matters" in (
         SALESPERSON_PROMPT
     )
-    assert "demonstrate conversationally instead of following a fixed tour" in (
+    assert "Continue discovery through that conversation" in SALESPERSON_PROMPT
+    assert "the business consequence" in SALESPERSON_PROMPT
+    assert "If Atomic is not a good fit, say so plainly" in SALESPERSON_PROMPT
+
+
+def test_sales_prompt_keeps_browser_mechanics_silent() -> None:
+    assert "Browser mechanics are silent by default" in SALESPERSON_PROMPT
+    assert "Never narrate observing" in SALESPERSON_PROMPT
+    assert "Speak only to ask a useful question" in SALESPERSON_PROMPT
+    assert "never the interface steps" in SALESPERSON_PROMPT
+
+
+def test_sales_prompt_accepts_harmless_fictional_demo_data() -> None:
+    assert "Every record created or edited in Atomic" in SALESPERSON_PROMPT
+    assert "Harmless fictional characters, jokes" in SALESPERSON_PROMPT
+    assert "Darth Vader wants a CRM" in SALESPERSON_PROMPT
+    assert "without refusing, warning, moralizing" in SALESPERSON_PROMPT
+
+
+def test_sales_prompt_establishes_product_context_before_discovery() -> None:
+    product_context = "Atomic is a CRM that helps teams manage customer relationships"
+    discovery_question = "Tell me a little about your company"
+
+    assert product_context in SALESPERSON_PROMPT
+    assert SALESPERSON_PROMPT.index(product_context) < SALESPERSON_PROMPT.index(
+        discovery_question
+    )
+    assert "This product context must come before asking" in SALESPERSON_PROMPT
+    assert 'Do not open with a vague question such as "What are you looking for?"' in (
         SALESPERSON_PROMPT
     )
-    assert "This is the entire onboarding" not in SALESPERSON_PROMPT
-    assert "Do not add a welcome" not in SALESPERSON_PROMPT
+
+
+def test_sales_prompt_keeps_onboarding_to_one_optional_follow_up() -> None:
+    assert "Onboarding exists only to create relevant fictional data" in (
+        SALESPERSON_PROMPT
+    )
+    assert "ask at most one short follow-up" in SALESPERSON_PROMPT
+    assert "call prepare_demo immediately in the same response" in SALESPERSON_PROMPT
+    assert "Never add a confirmation round trip" in SALESPERSON_PROMPT
+    assert "use the tool's defaults rather than keeping them in onboarding" in (
+        SALESPERSON_PROMPT
+    )
+
+
+def test_sales_prompt_requires_outcome_led_workflows_not_feature_pitches() -> None:
+    assert "A proof point is a complete business workflow" in SALESPERSON_PROMPT
+    assert "sort or filter control" in SALESPERSON_PROMPT
+    assert "NEVER a proof point or a reason to pitch" in SALESPERSON_PROMPT
+    assert "Complete the relevant workflow before discussing its value" in (
+        SALESPERSON_PROMPT
+    )
+    assert "Never ask whether an isolated feature or control would be helpful" in (
+        SALESPERSON_PROMPT
+    )
+
+
+def test_sales_prompt_defaults_to_no_highlight() -> None:
+    assert "Default to no highlight" in SALESPERSON_PROMPT
+    assert "at most once in the entire conversation" in SALESPERSON_PROMPT
+    assert 'Never highlight pagination, counts such as "1 of 1,"' in (
+        SALESPERSON_PROMPT
+    )
+
+
+def test_sales_prompt_only_offers_a_meeting_after_expressed_interest() -> None:
+    assert "visitor expresses interest" in SALESPERSON_PROMPT
+    assert "call show_meeting_card immediately" in SALESPERSON_PROMPT
+    assert "only displays a follow-up card" in SALESPERSON_PROMPT
+    assert "Never claim a meeting is booked" in SALESPERSON_PROMPT
+
+
+def test_show_meeting_card_returns_a_frontend_signal() -> None:
+    assert show_meeting_card() == {"event": "show_meeting_card", "visible": True}
 
 
 def test_normalize_sdp_uses_browser_safe_line_endings() -> None:
@@ -75,15 +161,15 @@ def test_normalize_sdp_uses_browser_safe_line_endings() -> None:
 def test_realtime_model_settings_reduce_false_interruptions() -> None:
     model_settings = build_realtime_model_settings(
         Settings(
-            openai_realtime_vad_threshold=0.75,
-            openai_realtime_noise_reduction="near_field",
+            openai_realtime_vad_threshold=0.85,
+            openai_realtime_noise_reduction="far_field",
         )
     )
 
-    assert model_settings["openai_input_noise_reduction"] == "near_field"
+    assert model_settings["openai_input_noise_reduction"] == "far_field"
     assert model_settings["openai_turn_detection"] == {
         "type": "server_vad",
-        "threshold": 0.75,
+        "threshold": 0.85,
         "interrupt_response": True,
     }
 
