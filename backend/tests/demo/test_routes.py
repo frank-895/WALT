@@ -23,9 +23,7 @@ class ScreenshotResponse:
 
 
 class FakeBrowserSandbox:
-    async def run_browser_action(
-        self, command: str, request: str, timeout: int
-    ) -> ProcessResponse:
+    async def run_browser_action(self, request: str, timeout: int) -> ProcessResponse:
         action = json.loads(base64.b64decode(request))
         return ProcessResponse(
             result=json.dumps(
@@ -66,7 +64,6 @@ class FakeSandboxProvider:
     def browser_controller(self, sandbox: object) -> BrowserController:
         return BrowserController(
             self.browser,
-            "walt-browser-action",
             "http://127.0.0.1:8080",
             15,
             70,

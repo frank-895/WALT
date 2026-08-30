@@ -11,6 +11,7 @@ from daytona import (
 )
 
 from api.demo.browser import BrowserController, ProcessResult, ScreenshotResult
+from api.demo.browser_harness import BROWSER_ACTION_COMMAND
 from api.settings import Settings
 
 
@@ -65,13 +66,10 @@ class DaytonaBrowserSandbox:
         """
         self._sandbox = sandbox
 
-    async def run_browser_action(
-        self, command: str, request: str, timeout: int
-    ) -> ProcessResult:
-        """Execute the image-owned adapter with a base64 JSON request.
+    async def run_browser_action(self, request: str, timeout: int) -> ProcessResult:
+        """Execute the fixed Browser Use program with a base64 JSON request.
 
         Args:
-            command: Trusted configured executable name.
             request: Base64-encoded validated action JSON.
             timeout: Operation deadline in seconds.
 
@@ -79,7 +77,9 @@ class DaytonaBrowserSandbox:
             Daytona's process result.
         """
         return await self._sandbox.process.exec(
-            command, env={"WALT_BROWSER_REQUEST": request}, timeout=timeout
+            BROWSER_ACTION_COMMAND,
+            env={"WALT_BROWSER_REQUEST": request},
+            timeout=timeout,
         )
 
     async def take_screenshot(self, quality: int, scale: float) -> ScreenshotResult:
@@ -217,7 +217,6 @@ class DaytonaSandboxProvider:
         """
         return BrowserController(
             DaytonaBrowserSandbox(sandbox),
-            command=self._settings.browser_action_command,
             atomic_origin=self._settings.atomic_origin,
             timeout_seconds=self._settings.browser_action_timeout_seconds,
             screenshot_quality=self._settings.screenshot_quality,

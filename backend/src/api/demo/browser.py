@@ -70,10 +70,8 @@ class ScreenshotResult(Protocol):
 class BrowserSandbox(Protocol):
     """Minimal sandbox operations required by BrowserController."""
 
-    async def run_browser_action(
-        self, command: str, request: str, timeout: int
-    ) -> ProcessResult:
-        """Run the fixed image-owned browser adapter."""
+    async def run_browser_action(self, request: str, timeout: int) -> ProcessResult:
+        """Run the fixed backend-owned Browser Use program."""
         ...
 
     async def take_screenshot(self, quality: int, scale: float) -> ScreenshotResult:
@@ -110,7 +108,6 @@ class BrowserController:
     def __init__(
         self,
         sandbox: BrowserSandbox,
-        command: str,
         atomic_origin: str,
         timeout_seconds: int,
         screenshot_quality: int,
@@ -120,14 +117,12 @@ class BrowserController:
 
         Args:
             sandbox: Safe process and screenshot facade for the sandbox.
-            command: Fixed image-owned runner executable.
             atomic_origin: Only origin browser state may use.
             timeout_seconds: Per-operation runner timeout.
             screenshot_quality: JPEG quality for Realtime vision.
             screenshot_scale: Screenshot scale for Realtime vision.
         """
         self._sandbox = sandbox
-        self._command = command
         self._atomic_origin = atomic_origin.rstrip("/")
         self._timeout_seconds = timeout_seconds
         self._screenshot_quality = screenshot_quality
@@ -166,14 +161,16 @@ class BrowserController:
                 json.dumps(request, separators=(",", ":")).encode()
             ).decode()
             process_result = await self._sandbox.run_browser_action(
-                self._command, encoded_request, self._timeout_seconds
+                encoded_request, self._timeout_seconds
             )
             if process_result.exit_code != 0:
                 raise BrowserUnavailableError(
                     "The browser action could not be completed"
                 )
             try:
-                state = RawBrowserState.model_validate_json(process_result.result)
+                state = RawBrowserState.model_validate_json(
+                    process_result.result.strip().splitlines()[-1]
+                )
             except ValueError as error:
                 raise BrowserUnavailableError(
                     "The browser adapter returned invalid state"
@@ -187,7 +184,10 @@ class BrowserController:
             )
             if not screenshot_result.screenshot:
                 raise BrowserUnavailableError("The desktop screenshot was empty")
-            route = urlsplit(state.url).path or "/"
+            parsed_url = urlsplit(state.url)
+            route = parsed_url.path or "/"
+            if parsed_url.fragment:
+                route = f"{route}#{parsed_url.fragment}"
             return BrowserActionResult(
                 generation=self._generation,
                 url=state.url,

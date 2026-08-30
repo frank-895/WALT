@@ -182,11 +182,22 @@ class DemoService:
             except Exception as error:
                 session.status = "failed"
                 session.error = "Atomic could not be prepared."
+                logger.warning(
+                    "demo_prepare_failed",
+                    extra={
+                        "demo_session_id": session.id,
+                        "error_type": type(error).__name__,
+                    },
+                )
                 raise DemoNotReadyError(session.error) from error
             session.controller = controller
             session.seed_digest = digest
             session.initial_observation = observation
             session.status = "ready"
+            logger.info(
+                "demo_prepared",
+                extra={"demo_session_id": session.id},
+            )
             return observation
 
     async def browser_action(
@@ -259,9 +270,16 @@ class DemoService:
                     await self._sandboxes.delete(session.sandbox)
                     session.sandbox = None
             raise
-        except Exception:  # noqa: BLE001
+        except Exception as error:  # noqa: BLE001
             session.status = "failed"
             session.error = "The demo sandbox could not be started."
+            logger.warning(
+                "demo_provision_failed",
+                extra={
+                    "demo_session_id": session.id,
+                    "error_type": type(error).__name__,
+                },
+            )
 
     async def _live_session(self, session_id: str) -> DemoSession:
         """Resolve a non-expired private session.

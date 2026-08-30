@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     novnc_port: int = Field(default=6080, ge=1, le=65535)
     seed_path: str = "/opt/atomic/dist/seed.json"
     start_command: str = "start-demo"
-    browser_action_command: str = "walt-browser-action"
     browser_action_timeout_seconds: int = Field(default=15, ge=1, le=60)
     atomic_origin: str = "http://127.0.0.1:8080"
     screenshot_quality: int = Field(default=70, ge=20, le=95)

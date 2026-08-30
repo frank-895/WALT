@@ -24,12 +24,10 @@ class FakeBrowserSandbox:
     def __init__(self) -> None:
         self.requests: list[dict[str, object]] = []
 
-    async def run_browser_action(
-        self, command: str, request: str, timeout: int
-    ) -> ProcessResponse:
+    async def run_browser_action(self, request: str, timeout: int) -> ProcessResponse:
         self.requests.append(json.loads(base64.b64decode(request)))
         state = {
-            "url": "http://127.0.0.1:8080/deals",
+            "url": "http://127.0.0.1:8080/#/deals",
             "title": "Atomic CRM",
             "controls": [
                 {"node_id": 41, "role": "button", "name": "Create deal"},
@@ -50,9 +48,7 @@ class FakeBrowserSandbox:
 
 def test_controller_refreshes_refs_and_disables_external_links() -> None:
     sandbox = FakeBrowserSandbox()
-    controller = BrowserController(
-        sandbox, "walt-browser-action", "http://127.0.0.1:8080", 15, 70, 0.75
-    )
+    controller = BrowserController(sandbox, "http://127.0.0.1:8080", 15, 70, 0.75)
 
     observed = asyncio.run(controller.execute(ObserveAction(action="observe")))
     clicked = asyncio.run(
@@ -65,14 +61,13 @@ def test_controller_refreshes_refs_and_disables_external_links() -> None:
         ("b2", True),
     ]
     assert clicked.generation == 2
+    assert clicked.route == "/#/deals"
     assert sandbox.requests[1] == {"action": "click", "node_id": 41}
 
 
 def test_controller_rejects_stale_refs_before_running_adapter() -> None:
     sandbox = FakeBrowserSandbox()
-    controller = BrowserController(
-        sandbox, "walt-browser-action", "http://127.0.0.1:8080", 15, 70, 0.75
-    )
+    controller = BrowserController(sandbox, "http://127.0.0.1:8080", 15, 70, 0.75)
     asyncio.run(controller.execute(ObserveAction(action="observe")))
 
     with pytest.raises(StaleBrowserReferenceError):
